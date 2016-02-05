@@ -1,0 +1,9 @@
+[submodule "deps/reflex-dom-contrib"]
+	path = deps/reflex-dom-contrib
+	url = git@github.com:reflex-frp/reflex-dom-contrib.git
+[submodule "deps/try-reflex"]
+	path = deps/try-reflex
+	url = git@github.com:ryantrinkle/try-reflex.git
+[submodule "deps/servant"]
+	path = deps/servant
+	url = https://github.com/haskell-servant/servant.git

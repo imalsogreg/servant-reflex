@@ -1,0 +1,46 @@
+Name: servant-reflex
+Version: 0.1
+Synopsis: Servant reflex API generator
+Description: Servant reflex API generator
+License: AllRightsReserved
+License-file: LICENSE
+Author: Doug Beardsley
+Maintainer: mightybyte@gmail.com
+Stability: Experimental
+Category: Web
+Build-type: Simple
+Cabal-version: >=1.8
+
+library
+  exposed-modules:     
+    Servant.Reflex
+
+  other-modules:       
+    Servant.Common.BaseUrl
+    Servant.Common.Req
+
+  hs-source-dirs: src
+  build-depends:
+    base,
+    bytestring          >= 0.10 && < 0.11,
+    containers,
+    exceptions          >= 0.8  && < 0.9,
+    ghcjs-base,
+    ghcjs-dom           == 0.1.*,
+    http-media          >= 0.6  && < 0.7,
+    http-types          >= 0.8  && < 0.9,
+    mtl,
+    network-uri         >= 2.6  && < 2.7,
+    reflex,
+    reflex-dom,
+    reflex-dom-contrib,
+    safe,
+    servant             >= 0.5  && < 0.6,
+    string-conversions,
+    text,
+    transformers        >= 0.4  && < 0.5
+
+  if impl(ghcjs)
+      build-depends: ghcjs-base
+
+  ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2

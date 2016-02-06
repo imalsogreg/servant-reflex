@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
 #if !MIN_VERSION_base(4,8,0)
 {-# LANGUAGE OverlappingInstances #-}
 #endif
@@ -27,6 +28,7 @@ import           Control.Applicative        ((<$>))
 import           Control.Monad
 import           Control.Monad.Trans.Except
 import           Data.ByteString.Lazy       (ByteString)
+import           Data.Default
 import           Data.List
 import           Data.Proxy
 import           Data.String.Conversions
@@ -38,7 +40,11 @@ import qualified Network.HTTP.Types.Header  as HTTP
 import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
+import           Reflex
+import           Reflex.Dom
 import Web.HttpApiData
+import Reflex.Dom.Contrib.Xhr
+import Reflex.Dom.Xhr
 
 -- * Accessing APIs as a Client
 
@@ -54,37 +60,44 @@ import Web.HttpApiData
 -- > postNewBook :: Book -> ExceptT String IO Book
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = BaseUrl Http "localhost" 8080
-client :: HasReflexClient layout => Proxy layout -> BaseUrl -> Input layout -> Client layout
+client :: HasReflexClient layout
+       => Proxy layout
+       -> BaseUrl
+       -- -> Input layout
+       -> Client (Input layout) (Output layout)
 client p baseurl = clientWithRoute p defReq baseurl
-
-type Final a = forall m. m a
 
 data a ::> b = a ::> b deriving (Eq,Ord,Show,Read)
 
 infixr 3 ::>
+
+
+type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
 class HasReflexClient layout where
   type Input layout :: *
-  type Client layout :: *
-  clientWithRoute :: Proxy layout -> Req -> BaseUrl -> Input layout -> Client layout
+  type Output layout :: *
+  clientWithRoute :: Proxy layout -> Req -> BaseUrl -- -> Input layout
+                  -> Client (Input layout) (Output layout)
 
 
--- | If you have a 'Get' endpoint in your API, the client
--- side querying function that is created when calling 'client'
--- will just require an argument that specifies the scheme, host
--- and port to send the request to.
-instance
-#if MIN_VERSION_base(4,8,0)
-         {-# OVERLAPPABLE #-}
-#endif
-  (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
-  type Input (Get (ct ': cts) result) = ()
-  type Client (Get (ct ': cts) result) = Final result
-  clientWithRoute Proxy req baseurl _ =
-    snd <$> performRequestCT (Proxy :: Proxy ct) H.methodGet req baseurl
+-- -- | If you have a 'Get' endpoint in your API, the client
+-- -- side querying function that is created when calling 'client'
+-- -- will just require an argument that specifies the scheme, host
+-- -- and port to send the request to.
+-- instance
+-- #if MIN_VERSION_base(4,8,0)
+--          {-# OVERLAPPABLE #-}
+-- #endif
+--   (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
+--   type Input (Get (ct ': cts) result) = ()
+--   -- type Output (Get (ct' : cts) result) = result
+--   type Client (Get (ct ': cts) result) = Final result
+--   clientWithRoute Proxy req baseurl _ =
+--     snd <$> performRequestCT (Proxy :: Proxy ct) H.methodGet req baseurl
 
 instance
 #if MIN_VERSION_base(4,8,0)
@@ -92,19 +105,23 @@ instance
 #endif
   HasReflexClient (Get (ct ': cts) ()) where
   type Input (Get (ct ': cts) ()) = ()
-  type Client (Get (ct ': cts) ()) = Final ()
-  clientWithRoute Proxy req baseurl _ =
-    performRequestNoBody H.methodGet req baseurl
+  type Output (Get (ct ': cts) ()) = ()
+  -- type Client (Get (ct ': cts) ()) = Final ()
+  clientWithRoute Proxy req baseurl trigEvents =
+    performAJAX requestBuilder responseParser trigEvents
+    where
+      requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
+      responseParser _ = ()
 
--- | Pick a 'Method' and specify where the server you want to query is. You get
--- back the full `Response`.
-instance HasReflexClient Raw where
-  type Input Raw = H.Method ::> ()
-  type Client Raw = Final (Int, ByteString, MediaType, [HTTP.Header], Response ByteString)
+-- -- | Pick a 'Method' and specify where the server you want to query is. You get
+-- -- back the full `Response`.
+-- instance HasReflexClient Raw where
+--   type Input Raw = H.Method ::> ()
+--   type Client Raw = Final (Int, ByteString, MediaType, [HTTP.Header], Response ByteString)
 
-  clientWithRoute :: Proxy Raw -> Req -> BaseUrl -> Input Raw -> Client Raw
-  clientWithRoute Proxy req baseurl (httpMethod ::> ()) = do
-    performRequest httpMethod req baseurl
+--   clientWithRoute :: Proxy Raw -> Req -> BaseUrl -> Input Raw -> Client Raw
+--   clientWithRoute Proxy req baseurl (httpMethod ::> ()) = do
+--     performRequest httpMethod req baseurl
 
 -- -- | If you have a 'Get xs (Headers ls x)' endpoint, the client expects the
 -- -- corresponding headers.

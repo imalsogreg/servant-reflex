@@ -2,6 +2,8 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes          #-}
+
 module Servant.Common.Req where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -65,60 +67,60 @@ data Req = Req
 defReq :: Req
 defReq = Req "" [] Nothing [] []
 
-appendToPath :: String -> Req -> Req
-appendToPath p req =
-  req { reqPath = reqPath req ++ "/" ++ p }
+-- appendToPath :: String -> Req -> Req
+-- appendToPath p req =
+--   req { reqPath = reqPath req ++ "/" ++ p }
 
-appendToQueryString :: Text       -- ^ param name
-                    -> Maybe Text -- ^ param value
-                    -> Req
-                    -> Req
-appendToQueryString pname pvalue req =
-  req { qs = qs req ++ [(pname, pvalue)]
-      }
+-- appendToQueryString :: Text       -- ^ param name
+--                     -> Maybe Text -- ^ param value
+--                     -> Req
+--                     -> Req
+-- appendToQueryString pname pvalue req =
+--   req { qs = qs req ++ [(pname, pvalue)]
+--       }
 
-addHeader :: ToHttpApiData a => String -> a -> Req -> Req
-addHeader name val req = req { headers = headers req
-                                      ++ [(name, decodeUtf8 (toHeader val))]
-                             }
+-- addHeader :: ToHttpApiData a => String -> a -> Req -> Req
+-- addHeader name val req = req { headers = headers req
+--                                       ++ [(name, decodeUtf8 (toHeader val))]
+--                              }
 
-setRQBody :: ByteString -> MediaType -> Req -> Req
-setRQBody b t req = req { reqBody = Just (b, t) }
+-- setRQBody :: ByteString -> MediaType -> Req -> Req
+-- setRQBody b t req = req { reqBody = Just (b, t) }
 
-reqToRequest :: (Functor m, MonadThrow m) => Req -> BaseUrl -> m Request
-reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
-    setheaders . setAccept . setrqb . setQS <$> parseUrl url
+-- reqToRequest :: (Functor m, MonadThrow m) => Req -> BaseUrl -> m Request
+-- reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
+--     setheaders . setAccept . setrqb . setQS <$> parseUrl url
 
-  where url = show $ nullURI { uriScheme = case reqScheme of
-                                  Http  -> "http:"
-                                  Https -> "https:"
-                             , uriAuthority = Just $
-                                 URIAuth { uriUserInfo = ""
-                                         , uriRegName = reqHost
-                                         , uriPort = ":" ++ show reqPort
-                                         }
-                             , uriPath = path ++ reqPath req
-                             }
+--   where url = show $ nullURI { uriScheme = case reqScheme of
+--                                   Http  -> "http:"
+--                                   Https -> "https:"
+--                              , uriAuthority = Just $
+--                                  URIAuth { uriUserInfo = ""
+--                                          , uriRegName = reqHost
+--                                          , uriPort = ":" ++ show reqPort
+--                                          }
+--                              , uriPath = path ++ reqPath req
+--                              }
 
-        setrqb r = case reqBody req of
-                     Nothing -> r
-                     Just (b,t) -> r { requestBody = RequestBodyLBS b
-                                     , requestHeaders = requestHeaders r
-                                                     ++ [(hContentType, cs . show $ t)] }
-        setQS = setQueryString $ queryTextToQuery (qs req)
-        setheaders r = r { requestHeaders = requestHeaders r
-                                         <> fmap toProperHeader (headers req) }
-        setAccept r = r { requestHeaders = filter ((/= "Accept") . fst) (requestHeaders r)
-                                        <> [("Accept", renderHeader $ reqAccept req)
-                                              | not . null . reqAccept $ req] }
-        toProperHeader (name, val) =
-          (fromString name, encodeUtf8 val)
+--         setrqb r = case reqBody req of
+--                      Nothing -> r
+--                      Just (b,t) -> r { requestBody = RequestBodyLBS b
+--                                      , requestHeaders = requestHeaders r
+--                                                      ++ [(hContentType, cs . show $ t)] }
+--         setQS = setQueryString $ queryTextToQuery (qs req)
+--         setheaders r = r { requestHeaders = requestHeaders r
+--                                          <> fmap toProperHeader (headers req) }
+--         setAccept r = r { requestHeaders = filter ((/= "Accept") . fst) (requestHeaders r)
+--                                         <> [("Accept", renderHeader $ reqAccept req)
+--                                               | not . null . reqAccept $ req] }
+--         toProperHeader (name, val) =
+--           (fromString name, encodeUtf8 val)
 
 
--- * performing requests
+-- -- * performing requests
 
-displayHttpRequest :: Method -> String
-displayHttpRequest httpmethod = "HTTP " ++ cs httpmethod ++ " request"
+-- displayHttpRequest :: Method -> String
+-- displayHttpRequest httpmethod = "HTTP " ++ cs httpmethod ++ " request"
 
 performRequest = undefined
 performRequestCT = undefined
@@ -129,16 +131,16 @@ performRequestNoBody = undefined
 --                                           , [HTTP.Header], Response ByteString)
 -- performRequest reqMethod req reqHost manager = do
 --   partialRequest <- liftIO $ reqToRequest req reqHost
---
+
 --   let request = partialRequest { Client.method = reqMethod
 --                                , checkStatus = \ _status _headers _cookies -> Nothing
 --                                }
---
+
 --   eResponse <- liftIO $ catchConnectionError $ Client.httpLbs request manager
 --   case eResponse of
 --     Left err ->
 --       throwE . ConnectionError $ SomeException err
---
+
 --     Right response -> do
 --       let status = Client.responseStatus response
 --           body = Client.responseBody response
@@ -152,7 +154,7 @@ performRequestNoBody = undefined
 --       unless (status_code >= 200 && status_code < 300) $
 --         throwE $ FailureResponse status ct body
 --       return (status_code, body, ct, hrds, response)
---
+
 --
 -- performRequestCT :: MimeUnrender ct result =>
 --   Proxy ct -> Method -> Req -> BaseUrl -> Manager -> ExceptT ServantError IO ([HTTP.Header], result)

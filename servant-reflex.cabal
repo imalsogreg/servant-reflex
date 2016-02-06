@@ -24,9 +24,11 @@ library
     base,
     bytestring          >= 0.10 && < 0.11,
     containers,
+    data-default        >= 0.5  && < 0.6,
     exceptions          >= 0.8  && < 0.9,
     ghcjs-base,
     ghcjs-dom           == 0.1.*,
+    http-api-data       >= 0.2  && < 0.3,
     http-media          >= 0.6  && < 0.7,
     http-types          >= 0.8  && < 0.9,
     mtl,
@@ -44,3 +46,11 @@ library
       build-depends: ghcjs-base
 
   ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+executable example
+  build-depends: reflex, servant-reflex, base, servant, reflex-dom, reflex-dom-contrib
+  default-language: Haskell2010
+  main-is: Example.hs
+  other-modules: API
+  hs-source-dirs: exec
+

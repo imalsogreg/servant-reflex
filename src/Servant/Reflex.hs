@@ -63,8 +63,8 @@ import Reflex.Dom.Xhr
 client :: HasReflexClient layout
        => Proxy layout
        -> BaseUrl
-       -- -> Input layout
-       -> Client (Input layout) (Output layout)
+--       -> Client (Input layout) (Output layout)
+       -> Client layout
 client p baseurl = clientWithRoute p defReq baseurl
 
 data a ::> b = a ::> b deriving (Eq,Ord,Show,Read)
@@ -72,7 +72,7 @@ data a ::> b = a ::> b deriving (Eq,Ord,Show,Read)
 infixr 3 ::>
 
 
-type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
+-- type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
@@ -80,8 +80,10 @@ type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
 class HasReflexClient layout where
   type Input layout :: *
   type Output layout :: *
-  clientWithRoute :: Proxy layout -> Req -> BaseUrl -- -> Input layout
-                  -> Client (Input layout) (Output layout)
+  type Client layout :: *
+  type Client layout = MonadWidget t m => Event t (Input layout) -> m (Event t (Output layout))
+  clientWithRoute :: MonadWidget t m => Proxy layout -> Req -> BaseUrl
+                  -> Event t (Input layout) -> m (Event t (Input layout, Output layout))
 
 
 -- | If you have a 'Get' endpoint in your API, the client
@@ -95,6 +97,7 @@ instance
   (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
   type Input (Get (ct ': cts) result) = ()
   type Output (Get (ct ': cts) result) = result
+  -- type Client (Get (ct ': cts) result) = MonadWidget t m => Event t (Input layout) -> m (Event t result)
   clientWithRoute Proxy req baseurl trigEvents = undefined -- performAJAX requestBuilder responseParser
 --     where
 --       requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
@@ -122,6 +125,7 @@ instance
   HasReflexClient (Get (ct ': cts) ()) where
   type Input (Get (ct ': cts) ()) = ()
   type Output (Get (ct ': cts) ()) = ()
+  -- type Client (Get (ct ': cts) ()) = MonadWidget t m => Event t () -> m (Event t ())
   clientWithRoute Proxy req baseurl trigEvents =
     performAJAX requestBuilder responseParser trigEvents
     where
@@ -154,27 +158,28 @@ instance
 --                      , getHeadersHList = buildHeadersTo hdrs
 --                      }
 --
--- -- | A client querying function for @a ':<|>' b@ will actually hand you
--- --   one function for querying @a@ and another one for querying @b@,
--- --   stitching them together with ':<|>', which really is just like a pair.
--- --
--- -- > type MyApi = "books" :> Get '[JSON] [Book] -- GET /books
--- -- >         :<|> "books" :> ReqBody '[JSON] Book :> Post Book -- POST /books
--- -- >
--- -- > myApi :: Proxy MyApi
--- -- > myApi = Proxy
--- -- >
--- -- > getAllBooks :: ExceptT String IO [Book]
--- -- > postNewBook :: Book -> ExceptT String IO Book
--- -- > (getAllBooks :<|> postNewBook) = client myApi host
--- -- >   where host = BaseUrl Http "localhost" 8080
--- instance (HasReflexClient a, HasReflexClient b) => HasReflexClient (a :<|> b) where
---   type Input (a :<|> b) = Input a :<|> Input b
---   type Client (a :<|> b) = Client a :<|> Client b
---   clientWithRoute Proxy req baseurl (a :<|> b) =
---     clientWithRoute (Proxy :: Proxy a) req baseurl a :<|>
---     clientWithRoute (Proxy :: Proxy b) req baseurl b
+-- | A client querying function for @a ':<|>' b@ will actually hand you
+--   one function for querying @a@ and another one for querying @b@,
+--   stitching them together with ':<|>', which really is just like a pair.
 --
+-- > type MyApi = "books" :> Get '[JSON] [Book] -- GET /books
+-- >         :<|> "books" :> ReqBody '[JSON] Book :> Post Book -- POST /books
+-- >
+-- > myApi :: Proxy MyApi
+-- > myApi = Proxy
+-- >
+-- > getAllBooks :: ExceptT String IO [Book]
+-- > postNewBook :: Book -> ExceptT String IO Book
+-- > (getAllBooks :<|> postNewBook) = client myApi host
+-- >   where host = BaseUrl Http "localhost" 8080
+instance (HasReflexClient a, HasReflexClient b) => HasReflexClient (a :<|> b) where
+  type Input (a :<|> b) = Input a :<|> Input b
+  -- type Output (a :<|> b) = Output a :<|> Output b
+  type Client (a :<|> b) = (Client a :<|> Client b)
+  clientWithRoute Proxy req baseurl (a :<|> b) =
+    clientWithRoute (Proxy :: Proxy a) req baseurl a :<|>
+    clientWithRoute (Proxy :: Proxy b) req baseurl b
+
 -- ------------------------------------------------------------------------------
 -- -- | If you use a 'Capture' in one of your endpoints in your API,
 -- -- the corresponding querying function will automatically take
@@ -574,18 +579,18 @@ instance
 --                     )
 --                     baseurl rest
 --
--- -- | Make the querying function append @path@ to the request path.
--- instance (KnownSymbol path, HasReflexClient sublayout) => HasReflexClient (path :> sublayout) where
---   type Input (path :> sublayout) = Input sublayout
---   type Client (path :> sublayout) = Client sublayout
---
---   clientWithRoute Proxy req baseurl val =
---      clientWithRoute (Proxy :: Proxy sublayout)
---                      (appendToPath p req)
---                      baseurl val
---
---     where p = symbolVal (Proxy :: Proxy path)
---
+-- | Make the querying function append @path@ to the request path.
+instance (KnownSymbol path, HasReflexClient sublayout) => HasReflexClient (path :> sublayout) where
+  type Input (path :> sublayout) = Input sublayout
+  --type Output (path :> sublayout) = Output sublayout
+  type Client (path :> sublayout) = Client sublayout
+  clientWithRoute Proxy req baseurl val =
+     clientWithRoute (Proxy :: Proxy sublayout)
+                     (appendToPath p req)
+                     baseurl val
+
+    where p = symbolVal (Proxy :: Proxy path)
+
 -- instance HasReflexClient api => HasReflexClient (Vault :> api) where
 --   type Input (Vault :> api) = Input api
 --   type Client (Vault :> api) = Client api

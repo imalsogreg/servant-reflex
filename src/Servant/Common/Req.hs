@@ -55,7 +55,7 @@ data ServantError
   deriving (Show, Typeable)
 
 instance Exception ServantError
-
+ 
 data Req = Req
   { reqPath   :: String
   , qs        :: QueryText
@@ -129,18 +129,19 @@ performRequestNoBody = undefined
 -- performRequest :: Method -> Req -> BaseUrl -> Manager
 --                -> ExceptT ServantError IO ( Int, ByteString, MediaType
 --                                           , [HTTP.Header], Response ByteString)
+-- performRequest :: MonadWidget t m => Method -> Req -> BaseUrl -> 
 -- performRequest reqMethod req reqHost manager = do
 --   partialRequest <- liftIO $ reqToRequest req reqHost
-
+-- 
 --   let request = partialRequest { Client.method = reqMethod
 --                                , checkStatus = \ _status _headers _cookies -> Nothing
 --                                }
-
+-- 
 --   eResponse <- liftIO $ catchConnectionError $ Client.httpLbs request manager
 --   case eResponse of
 --     Left err ->
 --       throwE . ConnectionError $ SomeException err
-
+-- 
 --     Right response -> do
 --       let status = Client.responseStatus response
 --           body = Client.responseBody response
@@ -151,7 +152,7 @@ performRequestNoBody = undefined
 --                  Just t -> case parseAccept t of
 --                    Nothing -> throwE $ InvalidContentTypeHeader (cs t) body
 --                    Just t' -> pure t'
---       unless (status_code >= 200 && status_code < 300) $
+--      unless (status_code >= 200 && status_code < 300) $
 --         throwE $ FailureResponse status ct body
 --       return (status_code, body, ct, hrds, response)
 

@@ -84,20 +84,36 @@ class HasReflexClient layout where
                   -> Client (Input layout) (Output layout)
 
 
--- -- | If you have a 'Get' endpoint in your API, the client
--- -- side querying function that is created when calling 'client'
--- -- will just require an argument that specifies the scheme, host
--- -- and port to send the request to.
--- instance
--- #if MIN_VERSION_base(4,8,0)
---          {-# OVERLAPPABLE #-}
--- #endif
---   (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
---   type Input (Get (ct ': cts) result) = ()
---   -- type Output (Get (ct' : cts) result) = result
---   type Client (Get (ct ': cts) result) = Final result
---   clientWithRoute Proxy req baseurl _ =
---     snd <$> performRequestCT (Proxy :: Proxy ct) H.methodGet req baseurl
+-- | If you have a 'Get' endpoint in your API, the client
+-- side querying function that is created when calling 'client'
+-- will just require an argument that specifies the scheme, host
+-- and port to send the request to.
+instance
+#if MIN_VERSION_base(4,8,0)
+         {-# OVERLAPPABLE #-}
+#endif
+  (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
+  type Input (Get (ct ': cts) result) = ()
+  type Output (Get (ct' : cts) result) = result
+  clientWithRoute Proxy req baseurl trigEvents = performAJAX requestBuilder responseParser
+    where
+      requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
+      responseParser xhrResp = 
+
+performAJAX
+    :: (MonadWidget t m)
+    => (a -> XhrRequest)
+    -- ^ Function to build the request
+    -> (XhrResponse -> b)
+    -- ^ Function to parse the response
+    -> Event t a
+    -> m (Event t (a, b))
+performAJAX mkRequest parseResponse req =
+    performEventAsync $ ffor req $ \a cb -> do
+      _ <- newXMLHttpRequest (mkRequest a) $ \response ->
+             liftIO $ cb (a, parseResponse response)
+      return ()
+
 
 instance
 #if MIN_VERSION_base(4,8,0)
@@ -106,7 +122,6 @@ instance
   HasReflexClient (Get (ct ': cts) ()) where
   type Input (Get (ct ': cts) ()) = ()
   type Output (Get (ct ': cts) ()) = ()
-  -- type Client (Get (ct ': cts) ()) = Final ()
   clientWithRoute Proxy req baseurl trigEvents =
     performAJAX requestBuilder responseParser trigEvents
     where

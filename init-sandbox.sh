@@ -31,10 +31,10 @@ cabal sandbox add-source deps/servant-snap/deps/servant/servant-lucid
 cabal sandbox add-source deps/servant-snap/deps/servant/servant-mock
 
 cabal sandbox add-source deps/servant-snap
+cabal sandbox add-source deps/reflex
 cabal sandbox add-source deps/reflex-dom
 cabal sandbox add-source deps/reflex-dom-contrib
 
 cabal sandbox add-source .
 
-cd test/front && cabal sandbox init --sandbox=../../.cabal-sandbox && cd ../..
-cd test/back  && cabal sandbox init --sandbox=../../.cabal-sandbox && cd ../..
+cd testserver && cabal sandbox init --sandbox=../.cabal-sandbox && cd ..

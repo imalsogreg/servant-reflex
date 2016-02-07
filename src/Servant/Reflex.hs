@@ -26,6 +26,7 @@ module Servant.Reflex
 import           Control.Applicative        ((<$>))
 #endif
 import           Control.Monad
+import           Control.Monad.Trans (liftIO)
 import           Control.Monad.Trans.Except
 import           Data.ByteString.Lazy       (ByteString)
 import           Data.Default
@@ -43,7 +44,6 @@ import           Servant.Common.Req
 import           Reflex
 import           Reflex.Dom
 import Web.HttpApiData
-import Reflex.Dom.Contrib.Xhr
 import Reflex.Dom.Xhr
 
 -- * Accessing APIs as a Client
@@ -94,11 +94,11 @@ instance
 #endif
   (MimeUnrender ct result) => HasReflexClient (Get (ct ': cts) result) where
   type Input (Get (ct ': cts) result) = ()
-  type Output (Get (ct' : cts) result) = result
-  clientWithRoute Proxy req baseurl trigEvents = performAJAX requestBuilder responseParser
-    where
-      requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
-      responseParser xhrResp = 
+  type Output (Get (ct ': cts) result) = result
+  clientWithRoute Proxy req baseurl trigEvents = undefined -- performAJAX requestBuilder responseParser
+--     where
+--       requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
+--       responseParser xhrResp = undefined
 
 performAJAX
     :: (MonadWidget t m)

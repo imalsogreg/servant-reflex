@@ -13,3 +13,6 @@
 [submodule "deps/reflex-dom"]
 	path = deps/reflex-dom
 	url = https://github.com/ryantrinkle/reflex-dom
+[submodule "deps/reflex"]
+	path = deps/reflex
+	url = https://github.com/ryantrinkle/reflex

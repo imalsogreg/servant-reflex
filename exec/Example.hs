@@ -7,7 +7,6 @@ import Servant.Reflex
 import API
 import Data.Proxy
 import Reflex.Dom
-import Reflex.Dom.Contrib.Xhr
 
 api :: Proxy API
 api = Proxy

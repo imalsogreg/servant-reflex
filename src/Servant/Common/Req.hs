@@ -67,9 +67,9 @@ data Req = Req
 defReq :: Req
 defReq = Req "" [] Nothing [] []
 
--- appendToPath :: String -> Req -> Req
--- appendToPath p req =
---   req { reqPath = reqPath req ++ "/" ++ p }
+appendToPath :: String -> Req -> Req
+appendToPath p req =
+  req { reqPath = reqPath req ++ "/" ++ p }
 
 -- appendToQueryString :: Text       -- ^ param name
 --                     -> Maybe Text -- ^ param value

@@ -63,16 +63,14 @@ import Reflex.Dom.Xhr
 client :: HasReflexClient layout
        => Proxy layout
        -> BaseUrl
---       -> Client (Input layout) (Output layout)
-       -> Client layout
+       -> Client (Input layout) (Output layout)
 client p baseurl = clientWithRoute p defReq baseurl
 
 data a ::> b = a ::> b deriving (Eq,Ord,Show,Read)
 
 infixr 3 ::>
 
-
--- type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
+type Client ins outs = MonadWidget t m => Event t ins -> m (Event t (ins,outs))
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
@@ -80,9 +78,10 @@ infixr 3 ::>
 class HasReflexClient layout where
   type Input layout :: *
   type Output layout :: *
-  type Client layout :: *
-  type Client layout = MonadWidget t m => Event t (Input layout) -> m (Event t (Output layout))
-  clientWithRoute :: MonadWidget t m => Proxy layout -> Req -> BaseUrl
+  -- clientWithRoute :: MonadWidget t m => Proxy layout -> Req -> BaseUrl
+  --                 -> Event t (Input layout) -> m (Event t (Input layout, Output layout))
+  clientWithRoute :: MonadWidget t m 
+                  => Proxy layout -> Req -> BaseUrl 
                   -> Event t (Input layout) -> m (Event t (Input layout, Output layout))
 
 
@@ -174,11 +173,10 @@ instance
 -- >   where host = BaseUrl Http "localhost" 8080
 instance (HasReflexClient a, HasReflexClient b) => HasReflexClient (a :<|> b) where
   type Input (a :<|> b) = Input a :<|> Input b
-  -- type Output (a :<|> b) = Output a :<|> Output b
-  type Client (a :<|> b) = (Client a :<|> Client b)
-  clientWithRoute Proxy req baseurl (a :<|> b) =
-    clientWithRoute (Proxy :: Proxy a) req baseurl a :<|>
-    clientWithRoute (Proxy :: Proxy b) req baseurl b
+  type Output (a :<|> b) = Output a :<|> Output b
+  clientWithRoute Proxy req baseurl (a :<|> b) = undefined
+--    clientWithRoute (Proxy :: Proxy a) req baseurl a :<|>
+--    clientWithRoute (Proxy :: Proxy b) req baseurl b
 
 -- ------------------------------------------------------------------------------
 -- -- | If you use a 'Capture' in one of your endpoints in your API,
@@ -582,8 +580,7 @@ instance (HasReflexClient a, HasReflexClient b) => HasReflexClient (a :<|> b) wh
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasReflexClient sublayout) => HasReflexClient (path :> sublayout) where
   type Input (path :> sublayout) = Input sublayout
-  --type Output (path :> sublayout) = Output sublayout
-  type Client (path :> sublayout) = Client sublayout
+  type Output (path :> sublayout) = Output sublayout
   clientWithRoute Proxy req baseurl val =
      clientWithRoute (Proxy :: Proxy sublayout)
                      (appendToPath p req)

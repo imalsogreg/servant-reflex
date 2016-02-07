@@ -20,7 +20,7 @@ main = mainWidget run
 
 run :: forall t m. MonadWidget t m => m ()
 run = do
-  let (getUnit :: Event t () -> m (Event t ((),()))) = client api url
+  let (getUnit :<|> get100) = client api url
   b :: Event t () <- button "Get unit"
   res :: Event t ((),()) <- getUnit b
   c <- foldDyn (\_ (n :: Int) -> succ n) 0 res

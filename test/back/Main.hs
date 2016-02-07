@@ -37,7 +37,7 @@ testApi = Proxy
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API Snap
-server = return ()
+server = return () :<|> return 100
 
   where helloH name Nothing = helloH name (Just False)
         helloH name (Just False) = return . Greet $ "Hello, " <> name

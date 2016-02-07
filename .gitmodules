@@ -7,3 +7,9 @@
 [submodule "deps/servant"]
 	path = deps/servant
 	url = https://github.com/haskell-servant/servant.git
+[submodule "deps/servant-snap"]
+	path = deps/servant-snap
+	url = https://github.com/haskell-servant/servant-snap
+[submodule "deps/reflex-dom"]
+	path = deps/reflex-dom
+	url = https://github.com/ryantrinkle/reflex-dom

@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 #include "overlapping-compat.h"
 -- | This module provides 'client' which can automatically generate
@@ -50,7 +51,7 @@ import           Reflex.Dom.Xhr
 -- > myApi = Proxy
 -- >
 -- > getAllBooks :: Event t () -> m (Event t (Either XhrError ((),[Book])))
--- > postNewBook :: Behavior t (Maybe Book) -> Event t () 
+-- > postNewBook :: Behavior t (Maybe Book) -> Event t ()
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
@@ -60,41 +61,40 @@ client p baseurl = clientWithRoute p defReq baseurl
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
-class HasClient layout where
-  type Client layout :: *
-  clientWithRoute :: Proxy layout -> Req -> BaseUrl -> Client layout
+class HasClient t layout where
+  type Client t layout :: *
+  clientWithRoute :: Proxy layout -> Req t -> BaseUrl -> Client t layout
 
 
-instance (HasClient a, HasClient b) => HasClient (a :<|> b) where
-  type Client (a :<|> b) = Client a :<|> Client b
+instance (HasClient t a, HasClient t b) => HasClient t (a :<|> b) where
+  type Client t (a :<|> b) = Client t a :<|> Client t b
   clientWithRoute Proxy req baseurl manager =
-    clientWithRoute (Proxy :: Proxy a) req baseurl manager :<|>
-    clientWithRoute (Proxy :: Proxy b) req baseurl manager
+    clientWithRoute (Proxy :: Proxy a) req baseurl :<|>
+    clientWithRoute (Proxy :: Proxy b) req baseurl
 
 -- Capture. Example:
 -- > type MyApi = "books" :> Capture "isbn" Text :> Get '[JSON] Book
 -- >
 -- > myApi :: Proxy MyApi = Proxy
 -- >
--- > getBook :: MonadWidget t m 
+-- > getBook :: MonadWidget t m
 --           => Dynamic t BaseUrl
---           -> Behavior t (Maybe Text) 
+--           -> Behavior t (Maybe Text)
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
-instance (KnownSymbol capture, ToHttpApiData a, HasClient sublayout)
-      => HasClient (Capture capture a :> sublayout) where
+instance (Reflex t, KnownSymbol capture, ToHttpApiData a, HasClient t sublayout)
+      => HasClient t (Capture capture a :> sublayout) where
 
-  type Client (Capture capture a :> sublayout) =
-    a -> Client sublayout
+  type Client t (Capture capture a :> sublayout) =
+    Behavior t (Maybe a) -> Client t sublayout
 
-  clientWithRoute Proxy req baseurl manager val =
+  clientWithRoute Proxy req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
-                    (appendToPath p req)
+                    (appendToPathParts p req)
                     baseurl
-                    manager
 
-    where p = unpack (toUrlPiece val)
+    where p = fmap (unpack . toUrlPiece) val
 
 -- VERB (Returning content) --
 instance OVERLAPPABLE_

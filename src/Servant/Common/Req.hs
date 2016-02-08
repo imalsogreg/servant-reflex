@@ -57,8 +57,8 @@ data ServantError
 
 instance Exception ServantError
 
-data Req = Req
-  { reqPath   :: String
+data Req t = Req
+  { reqPathParts :: [Behavior t String]
   , qs        :: QueryText
   , reqBody   :: Maybe (ByteString, MediaType)
   , reqAccept :: [MediaType]
@@ -68,9 +68,9 @@ data Req = Req
 defReq :: Req
 defReq = Req "" [] Nothing [] []
 
-appendToPath :: String -> Req -> Req
-appendToPath p req =
-  req { reqPath = reqPath req ++ "/" ++ p }
+prependToPathParts :: Reflex t => Behavior t String -> Req -> Req
+prependToPathParts p req =
+  req { reqPathParts = p : reqPathParts req }
 
 appendToQueryString :: Text       -- ^ param name
                     -> Maybe Text -- ^ param value

@@ -5,4 +5,5 @@ module API where
 
 import Servant.API
 
-type API = Get '[JSON] () :<|> Get '[JSON] Int
+type API = "getunit" :> Get '[JSON] () 
+      :<|> "getint"  :> Get '[JSON] Int

@@ -59,10 +59,11 @@ instance Exception ServantError
 
 data Req t = Req
   { reqPathParts :: [Behavior t String]
-  , qs        :: QueryText
-  , reqBody   :: Maybe (ByteString, MediaType)
-  , reqAccept :: [MediaType]
-  , headers   :: [(String, Text)]
+  , qParams      :: [(String, Behavior t String)]
+  -- , qs           :: QueryText
+  , reqBody      :: Maybe (ByteString, MediaType)
+  , reqAccept    :: [MediaType]
+  , headers      :: [(String, Text)]
   }
 
 defReq :: Req
@@ -154,8 +155,8 @@ performRequest reqMethod req reqHost manager = do
       return (status_code, body, ct, hdrs, response)
 
 
-performRequestCT :: MimeUnrender ct result =>
-  Proxy ct -> Method -> Req -> BaseUrl -> Manager
+performRequestCT :: (MimeUnrender ct result, Reflex t) =>
+  Proxy ct -> Method -> Req t -> BaseUrl -> Event t ()
     -> ExceptT ServantError IO ([HTTP.Header], result)
 performRequestCT ct reqMethod req reqHost manager = do
   let acceptCT = contentType ct

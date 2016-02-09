@@ -100,27 +100,40 @@ instance (Reflex t, KnownSymbol capture, ToHttpApiData a, HasClient t sublayout)
 instance OVERLAPPABLE_
   -- Note [Non-Empty Content Types]
   (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts)
-  ) => HasClient (Verb method status cts' a) where
-  type Client (Verb method status cts' a) = ExceptT ServantError IO a
-  clientWithRoute Proxy req baseurl manager =
-    snd <$> performRequestCT (Proxy :: Proxy ct) method req baseurl manager
+  ) => HasClient t (Verb method status cts' a) where
+  type Client t (Verb method status cts' a) =
+    Event t () -> m (Event t (Either XhrError a))
+    -- TODO how to access input types here?
+    -- ExceptT ServantError IO a
+  clientWithRoute Proxy req baseurl =
+    performRequestCT (Proxy :: Proxy ct) method req baseurl
       where method = reflectMethod (Proxy :: Proxy method)
 
 -- VERB (No content) --
 instance OVERLAPPING_
-  (ReflectMethod method) => HasClient (Verb method status cts NoContent) where
-  type Client (Verb method status cts NoContent) = ExceptT ServantError IO NoContent
+  (ReflectMethod method, Reflex t) =>
+  HasClient t (Verb method status cts NoContent) where
+  type Client t (Verb method status cts NoContent) =
+    Event t () -> m (Event t (Either XhrError ()))
+    -- TODO: how to access input types here?
+    -- ExceptT ServantError IO NoContent
   clientWithRoute Proxy req baseurl manager =
-    performRequestNoBody method req baseurl manager >> return NoContent
+    performRequestNoBody method req baseurl
       where method = reflectMethod (Proxy :: Proxy method)
 
 -- HEADERS Verb (Content) --
+-- Headers combinator not treated in fully general case,
+-- in order to deny instances for (Headers ls (Capture "id" Int)),
+-- a combinator that wouldn't make sense
 instance OVERLAPPING_
   -- Note [Non-Empty Content Types]
-  ( MimeUnrender ct a, BuildHeadersTo ls, ReflectMethod method, cts' ~ (ct ': cts)
+  ( MimeUnrender ct a, BuildHeadersTo ls,
+    ReflectMethod method, cts' ~ (ct ': cts),
+    Reflex t
   ) => HasClient (Verb method status cts' (Headers ls a)) where
   type Client (Verb method status cts' (Headers ls a))
-    = ExceptT ServantError IO (Headers ls a)
+    = Event t () -> m (Event t (Either XhrError ()))
+      -- ExceptT ServantError IO (Headers ls a)
   clientWithRoute Proxy req baseurl manager = do
     let method = reflectMethod (Proxy :: Proxy method)
     (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl manager
@@ -130,11 +143,13 @@ instance OVERLAPPING_
 
 -- HEADERS Verb (No content) --
 instance OVERLAPPING_
-  ( BuildHeadersTo ls, ReflectMethod method
+  ( BuildHeadersTo ls, ReflectMethod method,
+    Reflex t
   ) => HasClient (Verb method status cts (Headers ls NoContent)) where
   type Client (Verb method status cts (Headers ls NoContent))
-    = ExceptT ServantError IO (Headers ls NoContent)
-  clientWithRoute Proxy req baseurl manager = do
+    = Event t () -> m (Event t (Either XhrError ()))
+      -- ExceptT ServantError IO (Headers ls NoContent)
+  clientWithRoute Proxy req baseurl = do
     let method = reflectMethod (Proxy :: Proxy method)
     hdrs <- performRequestNoBody method req baseurl manager
     return $ Headers { getResponse = NoContent
@@ -142,39 +157,27 @@ instance OVERLAPPING_
                      }
 
 
--- | If you use a 'Header' in one of your endpoints in your API,
--- the corresponding querying function will automatically take
--- an additional argument of the type specified by your 'Header',
--- wrapped in Maybe.
---
--- That function will take care of encoding this argument as Text
--- in the request headers.
---
--- All you need is for your type to have a 'ToHttpApiData' instance.
---
--- Example:
---
+-- HEADER
 -- > newtype Referer = Referer { referrer :: Text }
 -- >   deriving (Eq, Show, Generic, FromText, ToHttpApiData)
 -- >
 -- >            -- GET /view-my-referer
 -- > type MyApi = "view-my-referer" :> Header "Referer" Referer :> Get '[JSON] Referer
 -- >
--- > myApi :: Proxy MyApi
--- > myApi = Proxy
 -- >
 -- > viewReferer :: Maybe Referer -> ExceptT String IO Book
 -- > viewReferer = client myApi host
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "viewRefer" to query that endpoint
 -- > -- specifying Nothing or e.g Just "http://haskell.org/" as arguments
-instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
+instance (KnownSymbol sym, ToHttpApiData a,
+          HasClient sublayout, Reflex t)
       => HasClient (Header sym a :> sublayout) where
 
-  type Client (Header sym a :> sublayout) =
-    Maybe a -> Client sublayout
+  type Client t (Header sym a :> sublayout) =
+    Behavior t (Maybe a) -> Client t sublayout
 
-  clientWithRoute Proxy req baseurl manager mval =
+  clientWithRoute Proxy req baseurl mval =
     clientWithRoute (Proxy :: Proxy sublayout)
                     (maybe req
                            (\value -> Servant.Common.Req.addHeader hname value req)

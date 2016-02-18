@@ -55,7 +55,7 @@ import           Reflex.Dom.Xhr
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
-client :: (HasClient t m layout) => Proxy layout -> Dynamic t BaseUrl -> Client t m layout
+client :: (HasClient t m layout, MonadWidget t m) => Proxy layout -> Dynamic t BaseUrl -> Client t m layout
 client p baseurl = clientWithRoute p defReq baseurl
 
 -- | This class lets us define how each API combinator
@@ -109,52 +109,55 @@ instance {-# OVERLAPPABLE #-}
     performRequestCT (Proxy :: Proxy ct) method req baseurl
       where method = reflectMethod (Proxy :: Proxy method)
 
--- VERB (No content) --
-instance {-# OVERLAPPABLE #-}
-  (ReflectMethod method, MonadWidget t m) =>
-  HasClient t m (Verb method status cts NoContent) where
-  type Client t m (Verb method status cts NoContent) =
-    Event t () -> m (Event t XhrResponse)
-    -- TODO: how to access input types here?
-    -- ExceptT ServantError IO NoContent
-  clientWithRoute Proxy req baseurl =
-    performRequestNoBody method req baseurl
-      where method = reflectMethod (Proxy :: Proxy method)
+-- TODO Overlapping error??
+-- -- VERB (No content) --
+-- instance {-# OVERLAPPABLE #-}
+--   (ReflectMethod method, MonadWidget t m) =>
+--   HasClient t m (Verb method status cts NoContent) where
+--   type Client t m (Verb method status cts NoContent) =
+--     Event t () -> m (Event t XhrResponse)
+--     -- TODO: how to access input types here?
+--     -- ExceptT ServantError IO NoContent
+--   clientWithRoute Proxy req baseurl =
+--     performRequestNoBody method req baseurl
+--       where method = reflectMethod (Proxy :: Proxy method)
 
 -- HEADERS Verb (Content) --
 -- Headers combinator not treated in fully general case,
 -- in order to deny instances for (Headers ls (Capture "id" Int)),
 -- a combinator that wouldn't make sense
-instance {-# OVERLAPPABLE #-}
-  -- Note [Non-Empty Content Types]
-  ( MimeUnrender ct a, BuildHeadersTo ls,
-    ReflectMethod method, cts' ~ (ct ': cts),
-    MonadWidget t m
-  ) => HasClient t m (Verb method status cts' (Headers ls a)) where
-  type Client t m (Verb method status cts' (Headers ls a))
-    = Event t () -> m (Event t (Maybe a, XhrResponse))
-      -- ExceptT ServantError IO (Headers ls a)
-  clientWithRoute Proxy req baseurl = do
-    let method = reflectMethod (Proxy :: Proxy method)
-    (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
-    return $ Headers { getResponse = resp
-                     , getHeadersHList = buildHeadersTo hdrs
-                     }
+-- TODO Overlapping??
+-- instance {-# OVERLAPPABLE #-}
+--   -- Note [Non-Empty Content Types]
+--   ( MimeUnrender ct a, BuildHeadersTo ls,
+--     ReflectMethod method, cts' ~ (ct ': cts),
+--     MonadWidget t m
+--   ) => HasClient t m (Verb method status cts' (Headers ls a)) where
+--   type Client t m (Verb method status cts' (Headers ls a))
+--     = Event t () -> m (Event t (Maybe a, XhrResponse))
+--       -- ExceptT ServantError IO (Headers ls a)
+--   clientWithRoute Proxy req baseurl = do
+--     let method = reflectMethod (Proxy :: Proxy method)
+--     (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
+--     return $ Headers { getResponse = resp
+--                      , getHeadersHList = buildHeadersTo hdrs
+--                      }
 
--- HEADERS Verb (No content) --
-instance {-# OVERLAPPABLE #-}
-  ( BuildHeadersTo ls, ReflectMethod method,
-    MonadWidget t m
-  ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
-  type Client t m (Verb method status cts (Headers ls NoContent))
-    = Event t () -> m (Event t XhrResponse)
-      -- ExceptT ServantError IO (Headers ls NoContent)
-  clientWithRoute Proxy req baseurl = do
-    let method = reflectMethod (Proxy :: Proxy method)
-    hdrs <- performRequestNoBody method req baseurl 
-    return $ Headers { getResponse = NoContent
-                     , getHeadersHList = buildHeadersTo hdrs
-                     }
+-- TODO Overlapping??
+-- -- HEADERS Verb (No content) --
+-- instance {-# OVERLAPPABLE #-}
+--   ( BuildHeadersTo ls, ReflectMethod method,
+--     MonadWidget t m
+--   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
+--   type Client t m (Verb method status cts (Headers ls NoContent))
+--     = Event t () -> m (Event t XhrResponse)
+--       -- ExceptT ServantError IO (Headers ls NoContent)
+--   clientWithRoute Proxy req baseurl = do
+--     let method = reflectMethod (Proxy :: Proxy method)
+--     hdrs <- performRequestNoBody method req baseurl 
+--     return $ Headers { getResponse = NoContent
+--                      , getHeadersHList = buildHeadersTo hdrs
+--                      }
 
 
 -- HEADER
@@ -275,17 +278,18 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
   type Client t m (QueryParams sym a :> sublayout) =
     [a] -> Client t m sublayout
 
-  clientWithRoute Proxy req baseurl paramlist =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    (foldl' (\ req' -> maybe req' (flip (appendToQueryString pname) req' . Just))
-                            req
-                            paramlist'
-                    )
-                    baseurl
+  clientWithRoute Proxy req baseurl paramlist = undefined
+    -- clientWithRoute (Proxy :: Proxy sublayout)
+    --                 (foldl' prependPathParts req paramlist')
+    --                 (foldl' (\ req' -> maybe req' (flip (appendToQueryString pname) req' . Just))
+    --                         req
+    --                         paramlist'
+    --                 )
+    --                 baseurl
 
-    where pname  = cs pname'
-          pname' = symbolVal (Proxy :: Proxy sym)
-          paramlist' = map (Just . toQueryParam) paramlist
+    -- where pname  = cs pname'
+    --       pname' = symbolVal (Proxy :: Proxy sym)
+    --       paramlist' = map (Just . toQueryParam) paramlist
 
 -- | If you use a 'QueryFlag' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -309,21 +313,23 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 -- > -- then you can just use "getBooks" to query that endpoint.
 -- > -- 'getBooksBy False' for all books
 -- > -- 'getBooksBy True' to only get _already published_ books
-instance (KnownSymbol sym, HasClient t m sublayout)
-      => HasClient t m (QueryFlag sym :> sublayout) where
 
-  type Client t m (QueryFlag sym :> sublayout) =
-    Bool -> Client t m sublayout
+-- TODO Bring back
+-- instance (KnownSymbol sym, HasClient t m sublayout)
+--       => HasClient t m (QueryFlag sym :> sublayout) where
 
-  clientWithRoute Proxy req baseurl flag =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    (if flag
-                       then appendToQueryString paramname Nothing req
-                       else req
-                    )
-                    baseurl
+--   type Client t m (QueryFlag sym :> sublayout) =
+--     Bool -> Client t m sublayout
 
-    where paramname = cs $ symbolVal (Proxy :: Proxy sym)
+--   clientWithRoute Proxy req baseurl flag =
+--     clientWithRoute (Proxy :: Proxy sublayout)
+--                     (if flag
+--                        then appendToQueryString paramname Nothing req
+--                        else req
+--                     )
+--                     baseurl
+
+--     where paramname = cs $ symbolVal (Proxy :: Proxy sym)
 
 
 -- | Pick a 'Method' and specify where the server you want to query is. You get
@@ -355,20 +361,22 @@ instance (KnownSymbol sym, HasClient t m sublayout)
 -- > addBook = client myApi host 
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
-instance (MimeRender ct a, HasClient t m sublayout)
-      => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
-  type Client t m (ReqBody (ct ': cts) a :> sublayout) =
-    a -> Client sublayout
+-- TODO: Bring back
+-- instance (MimeRender ct a, HasClient t m sublayout)
+--       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
-  clientWithRoute Proxy req baseurl body =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    (let ctProxy = Proxy :: Proxy ct
-                     in setRQBody (mimeRender ctProxy body)
-                                  (contentType ctProxy)
-                                  req
-                    )
-                    baseurl 
+--   type Client t m (ReqBody (ct ': cts) a :> sublayout) =
+--     a -> Client sublayout
+
+--   clientWithRoute Proxy req baseurl body =
+--     clientWithRoute (Proxy :: Proxy sublayout)
+--                     (let ctProxy = Proxy :: Proxy ct
+--                      in setRQBody (mimeRender ctProxy body)
+--                                   (contentType ctProxy)
+--                                   req
+--                     )
+--                     baseurl 
 
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasClient t m sublayout) => HasClient t m (path :> sublayout) where
@@ -376,13 +384,13 @@ instance (KnownSymbol path, HasClient t m sublayout) => HasClient t m (path :> s
 
   clientWithRoute Proxy req baseurl =
      clientWithRoute (Proxy :: Proxy sublayout)
-                     (prependToPath (constant p) req)
+                     (prependToPathParts (constant p) req)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
 
 instance HasClient t m api => HasClient t m (Vault :> api) where
-  type Client t m (Vault :> api) = Client api
+  type Client t m (Vault :> api) = Client t m api
 
   clientWithRoute Proxy req baseurl =
     clientWithRoute (Proxy :: Proxy api) req baseurl

@@ -144,7 +144,8 @@ performRequestCT :: (MonadWidget t m, FromHttpApiData a)
                  => String -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (Maybe a, XhrResponse))
 performRequestCT reqMethod req reqHost trigger = do
-  fmap () -- TODO
+  resp <- performRequest reqMethod req reqHost trigger
+  return $ ffor resp $ \xhr -> undefined
 
 
   -- partialRequest <- liftIO $ reqToRequest req reqHost

@@ -30,7 +30,7 @@ library
     ghcjs-dom           >= 0.2  && < 0.3,
     http-api-data       >= 0.2  && < 0.3,
     http-media          >= 0.6  && < 0.7,
-    http-types          >= 0.8  && < 0.9,
+    http-types          >= 0.8  && < 0.10,
     mtl,
     network-uri         >= 2.6  && < 2.7,
     reflex,
@@ -47,9 +47,13 @@ library
   ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
 
 executable example
-  build-depends: reflex, servant-reflex, base, servant, reflex-dom
+  hs-source-dirs: exec
+  build-depends:
+    base,
+    reflex,
+    reflex-dom,
+    servant,
+    servant-reflex
   default-language: Haskell2010
   main-is: Example.hs
   other-modules: API
-  hs-source-dirs: exec
-

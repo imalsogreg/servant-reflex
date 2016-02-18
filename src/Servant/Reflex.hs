@@ -136,7 +136,7 @@ instance {-# OVERLAPPABLE #-}
       -- ExceptT ServantError IO (Headers ls a)
   clientWithRoute Proxy req baseurl = do
     let method = reflectMethod (Proxy :: Proxy method)
-    (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl 
+    (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
     return $ Headers { getResponse = resp
                      , getHeadersHList = buildHeadersTo hdrs
                      }
@@ -233,11 +233,8 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy req baseurl mparam =
-    clientWithRoute (Proxy :: Proxy sublayout) (prependToPathParts pname)
-                    (prependToPathParts req
-                           (flip (appendToQueryString pname) req . Just)
-                           mparamText
-                    )
+    clientWithRoute (Proxy :: Proxy sublayout)
+                    (req {qParams = (pname', map show mparam) : qParams req})
                     baseurl
 
     where pname  = cs pname'

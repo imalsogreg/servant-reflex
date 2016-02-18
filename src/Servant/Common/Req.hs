@@ -4,27 +4,27 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Servant.Common.Req where
 
-import Control.Exception
-import Control.Monad
+-- import Control.Exception
+-- import Control.Monad
 -- import Control.Monad.Catch (MonadThrow)
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Except
+-- import Control.Monad.IO.Class
+-- import Control.Monad.Trans.Except
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
-import qualified Data.Foldable as F
+-- import qualified Data.Foldable as F
 import qualified Data.List as L
-import Data.Monoid
-import Data.String
+-- import Data.Monoid
+-- import Data.String
 -- import Data.String.Conversions
-import Data.Proxy
-import Data.Text (Text)
-import Data.Text.Encoding
-import Data.Typeable
+-- import Data.Proxy
+-- import Data.Text (Text)
+-- import Data.Text.Encoding
+-- import Data.Typeable
 -- import Network.HTTP.Client hiding (Proxy, path)
 -- import Network.HTTP.Media
 -- import Network.HTTP.Types
 -- import qualified Network.HTTP.Types.Header   as HTTP
-import Network.URI hiding (path)
-import Servant.API.ContentTypes
+-- import Network.URI hiding (path)
+-- import Servant.API.ContentTypes
 import Servant.Common.BaseUrl
 import Reflex
 import Reflex.Dom
@@ -70,7 +70,7 @@ data Req t = Req
 defReq :: Req t
 defReq = Req [] [] Nothing []
 
-prependToPathParts :: Reflex t => Behavior t String -> Req t -> Req t
+prependToPathParts :: Reflex t => Behavior t (Maybe String) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
@@ -124,19 +124,27 @@ performRequest :: forall t m.MonadWidget t m => String -> Req t -> Dynamic t Bas
                -> m (Event t XhrResponse)
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
-performRequest reqMethod req reqHost trigger = do
-  let urlPath :: Behavior t String = fmap (L.intercalate "/") (sequence (reqPathParts req))
-      xhrReq  = ffor urlPath $ \p -> XhrRequest reqMethod p def
-  performRequestAsync (tag xhrReq trigger)
+performRequest reqMethod req _ trigger = do
+  let t :: Behavior t [Maybe String] = sequence $ reqPathParts req
+  let urlParts :: Behavior t (Maybe [String]) = fmap sequence t
+  let urlPath :: Behavior t (Maybe String) = (fmap.fmap) (L.intercalate "/") urlParts
+      xhrReq  = (fmap . fmap) (\p -> XhrRequest reqMethod p def) urlPath
+  performRequestAsync (fmapMaybe id $ tag xhrReq trigger)
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
 performRequestNoBody ::
-  forall t m .MonadWidget t m -> String -> Req t -> Dynamic t BaseUrl
+  forall t m .MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
                               -> Event t () -> m (Event t XhrResponse)
 performRequestNoBody reqMethod req reqHost trigger = do
   performRequest reqMethod req reqHost trigger
   -- return hdrs
+
+performRequestCT :: (MonadWidget t m, FromHttpApiData a)
+                 => String -> Req t -> Dynamic t BaseUrl
+                 -> Event t () -> m (Event t (Maybe a, XhrResponse))
+performRequestCT reqMethod req reqHost trigger = do
+  fmap () -- TODO
 
 
   -- partialRequest <- liftIO $ reqToRequest req reqHost

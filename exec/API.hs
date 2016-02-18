@@ -7,3 +7,4 @@ import Servant.API
 
 type API = "getunit" :> Get '[JSON] () 
       :<|> "getint"  :> Get '[JSON] Int
+      :<|> Raw

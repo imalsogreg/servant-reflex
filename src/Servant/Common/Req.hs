@@ -10,8 +10,11 @@ module Servant.Common.Req where
 -- import Control.Monad.IO.Class
 -- import Control.Monad.Trans.Except
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
+import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.Text.Encoding as TE
 -- import qualified Data.Foldable as F
 import qualified Data.List as L
+import Data.Proxy
 -- import Data.Monoid
 -- import Data.String
 -- import Data.String.Conversions
@@ -26,6 +29,7 @@ import qualified Data.List as L
 -- import Network.URI hiding (path)
 -- import Servant.API.ContentTypes
 import Servant.Common.BaseUrl
+import Servant.API.ContentTypes
 import Reflex
 import Reflex.Dom
 
@@ -133,19 +137,24 @@ performRequest reqMethod req _ trigger = do
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
+  -- TODO Proxy probably not needed
 performRequestNoBody ::
-  forall t m .MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
+  forall t m .MonadWidget t m => Proxy m -> String -> Req t -> Dynamic t BaseUrl
                               -> Event t () -> m (Event t XhrResponse)
-performRequestNoBody reqMethod req reqHost trigger = do
+performRequestNoBody _ reqMethod req reqHost trigger = do
   performRequest reqMethod req reqHost trigger
   -- return hdrs
 
-performRequestCT :: (MonadWidget t m, FromHttpApiData a)
-                 => String -> Req t -> Dynamic t BaseUrl
+performRequestCT :: (MonadWidget t m, FromHttpApiData a, MimeUnrender ct a)
+                 => Proxy ct -> String -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (Maybe a, XhrResponse))
-performRequestCT reqMethod req reqHost trigger = do
+performRequestCT ct reqMethod req reqHost trigger = do
   resp <- performRequest reqMethod req reqHost trigger
-  return $ ffor resp $ \xhr -> undefined
+  return $ ffor resp $ \xhr -> (hushed (mimeUnrender ct . BL.fromStrict . TE.encodeUtf8) =<< _xhrResponse_responseText xhr, xhr)
+  where hushed :: (x -> Either e y) -> (x -> Maybe y)
+        hushed f ea = case f ea of
+          Left e  -> Nothing
+          Right a -> Just a
 
 
   -- partialRequest <- liftIO $ reqToRequest req reqHost

@@ -3,6 +3,8 @@
 
 module Main where
 
+import Data.Maybe
+import Servant.API
 import Servant.Reflex
 import API
 import Data.Proxy
@@ -19,9 +21,25 @@ main = mainWidget run
 
 run :: forall t m. MonadWidget t m => m ()
 run = do
-  let (getUnit :: Event t () -> m (Event t ((),()))) = client api url
-  b :: Event t () <- button "Get unit"
-  res :: Event t ((),()) <- getUnit b
-  c <- foldDyn (\_ (n :: Int) -> succ n) 0 res
-  display c
+  let (getUnit :<|> getInt :<|> doRaw) = client api (Proxy :: Proxy m) (constDyn url)
+  b  :: Event t () <- button "Get unit"
+  b' :: Event t () <- button "Get int"
+  res :: Event t (Maybe (), XhrResponse) <- getUnit b
+  res' :: Event t (Maybe Int, XhrResponse) <- getInt b'
+  r <- holdDyn "Waiting" $ leftmost [fmap (showXhrResponse . snd) res
+                                    ,fmap (showXhrResponse . snd) res'
+                                    ]
+  dynText r
 
+showXhrResponse :: XhrResponse -> String
+showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =
+  unlines ["stat: " ++ show stat
+          ,"stattxt: " ++ show stattxt
+          ,"resp: " ++ maybe "" showRB rbmay
+          ,"rtext: " ++ show rtmay]
+
+showRB :: XhrResponseBody -> String
+showRB (XhrResponseBody_Default t) = show t
+showRB (XhrResponseBody_Text t) = show t
+showRB (XhrResponseBody_Blob t) = "<Blob>"
+showRB (XhrResponseBody_ArrayBuffer t) = show t

@@ -18,7 +18,6 @@
 module Servant.Reflex
   ( client
   , HasClient(..)
-  , ServantError(..)
   , module Servant.Common.BaseUrl
   ) where
 
@@ -29,6 +28,7 @@ import           Data.List
 import           Data.Proxy
 import           Data.String.Conversions
 import           Data.Text                  (unpack)
+import qualified Data.ByteString.Char8 as BS
 import           GHC.TypeLits
 -- import           Network.HTTP.Media
 -- import qualified Network.HTTP.Types         as H
@@ -36,6 +36,7 @@ import           GHC.TypeLits
 import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
+import           Servant.API.ContentTypes
 import           Reflex
 import           Reflex.Dom
 import           Reflex.Dom.Xhr
@@ -55,22 +56,23 @@ import           Reflex.Dom.Xhr
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
-client :: (HasClient t m layout, MonadWidget t m) => Proxy layout -> Dynamic t BaseUrl -> Client t m layout
-client p baseurl = clientWithRoute p defReq baseurl
+client :: (HasClient t m layout, MonadWidget t m)
+       => Proxy layout -> Proxy m -> Dynamic t BaseUrl -> Client t m layout
+client p q baseurl = clientWithRoute p q defReq baseurl
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
 class HasClient t m layout where
   type Client t m layout :: *
-  clientWithRoute :: Proxy layout -> Req t -> BaseUrl -> Client t m layout
+  clientWithRoute :: Proxy layout -> Proxy m -> Req t -> Dynamic t BaseUrl -> Client t m layout
 
 
 instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
   type Client t m (a :<|> b) = Client t m a :<|> Client t m b
-  clientWithRoute Proxy req baseurl =
-    clientWithRoute (Proxy :: Proxy a) req baseurl :<|>
-    clientWithRoute (Proxy :: Proxy b) req baseurl
+  clientWithRoute Proxy q req baseurl =
+    clientWithRoute (Proxy :: Proxy a) q req baseurl :<|>
+    clientWithRoute (Proxy :: Proxy b) q req baseurl
 
 -- Capture. Example:
 -- > type MyApi = "books" :> Capture "isbn" Text :> Get '[JSON] Book
@@ -89,25 +91,26 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
   type Client t m (Capture capture a :> sublayout) =
     Behavior t (Maybe a) -> Client t m sublayout
 
-  clientWithRoute Proxy req baseurl val =
+  clientWithRoute Proxy q req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
+                    q
                     (prependToPathParts p req)
                     baseurl
 
-    where p = fmap (unpack . toUrlPiece) val
+    where p = (fmap . fmap) (unpack . toUrlPiece) val
 
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
-  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
+  (MimeUnrender ct a, FromHttpApiData a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
   ) => HasClient t m (Verb method status cts' a) where
   type Client t m (Verb method status cts' a) =
     Event t () -> m (Event t (Maybe a, XhrResponse))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
-  clientWithRoute Proxy req baseurl =
+  clientWithRoute Proxy q req baseurl =
     performRequestCT (Proxy :: Proxy ct) method req baseurl
-      where method = reflectMethod (Proxy :: Proxy method)
+      where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
 
 -- TODO Overlapping error??
 -- -- VERB (No content) --
@@ -180,12 +183,14 @@ instance (KnownSymbol sym, ToHttpApiData a,
   type Client t m (Header sym a :> sublayout) =
     Behavior t (Maybe a) -> Client t m sublayout
 
-  clientWithRoute Proxy req baseurl mval =
+  clientWithRoute Proxy q req baseurl mval =
     clientWithRoute (Proxy :: Proxy sublayout)
-                    (maybe req
-                           (\value -> Servant.Common.Req.addHeader hname value req)
-                           mval
-                    )
+                    q
+                    req
+                    -- (maybe req -- TODO Need to pass the header in
+                    --        (\value -> Servant.Common.Req.addHeader hname value req)
+                    --        mval
+                    -- )
                     baseurl
 
     where hname = symbolVal (Proxy :: Proxy sym)
@@ -198,8 +203,8 @@ instance HasClient t m sublayout
   type Client t m (HttpVersion :> sublayout) =
     Client t m sublayout
 
-  clientWithRoute Proxy =
-    clientWithRoute (Proxy :: Proxy sublayout)
+  clientWithRoute Proxy q =
+    clientWithRoute (Proxy :: Proxy sublayout) q
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -235,14 +240,16 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
     Behavior t (Maybe a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string
-  clientWithRoute Proxy req baseurl mparam =
+  clientWithRoute Proxy q req baseurl mparam =
     clientWithRoute (Proxy :: Proxy sublayout)
-                    (req {qParams = (pname', map show mparam) : qParams req})
+                    q
+                    req -- TODO Must pass in the query param
+                    -- (req {qParams = (pname', map show mparam) : qParams req})
                     baseurl
 
-    where pname  = cs pname'
-          pname' = symbolVal (Proxy :: Proxy sym)
-          mparamText = fmap toQueryParam mparam
+    -- where pname  = cs pname'
+    --       pname' = symbolVal (Proxy :: Proxy sym)
+    --       mparamText = fmap toQueryParam mparam
 
 -- | If you use a 'QueryParams' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -278,7 +285,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
   type Client t m (QueryParams sym a :> sublayout) =
     [a] -> Client t m sublayout
 
-  clientWithRoute Proxy req baseurl paramlist = undefined
+  clientWithRoute Proxy _ req baseurl paramlist = undefined
     -- clientWithRoute (Proxy :: Proxy sublayout)
     --                 (foldl' prependPathParts req paramlist')
     --                 (foldl' (\ req' -> maybe req' (flip (appendToQueryString pname) req' . Just))
@@ -335,12 +342,15 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 -- | Pick a 'Method' and specify where the server you want to query is. You get
 -- back the full `Response`.
 -- TODO redo
--- instance HasClient Raw where
---   type Client Raw = String -> ExceptT ServantError IO (Int, ByteString, MediaType, [HTTP.Header], Response ByteString)
+instance (MonadWidget t m) => HasClient t m Raw where
+  type Client t m Raw = Behavior t (Maybe XhrRequest)
+                      -> Event t ()
+                      -> m (Event t XhrResponse)
 
---   clientWithRoute :: Proxy Raw -> Req -> BaseUrl -> Client Raw
---   clientWithRoute Proxy req baseurl httpMethod = do
---     performRequest httpMethod req baseurl 
+  -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> BaseUrl -> Client t m Raw
+  clientWithRoute p q req baseurl xhrs triggers = do
+    let okReq = fmapMaybe id $ tag xhrs triggers
+    performRequestAsync okReq
 
 -- | If you use a 'ReqBody' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -379,12 +389,12 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 --                     baseurl 
 
 -- | Make the querying function append @path@ to the request path.
-instance (KnownSymbol path, HasClient t m sublayout) => HasClient t m (path :> sublayout) where
+instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m (path :> sublayout) where
   type Client t m (path :> sublayout) = Client t m sublayout
 
-  clientWithRoute Proxy req baseurl =
-     clientWithRoute (Proxy :: Proxy sublayout)
-                     (prependToPathParts (constant p) req)
+  clientWithRoute Proxy q req baseurl =
+     clientWithRoute (Proxy :: Proxy sublayout) q
+                     (prependToPathParts (constant (Just p)) req)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
@@ -392,26 +402,26 @@ instance (KnownSymbol path, HasClient t m sublayout) => HasClient t m (path :> s
 instance HasClient t m api => HasClient t m (Vault :> api) where
   type Client t m (Vault :> api) = Client t m api
 
-  clientWithRoute Proxy req baseurl =
-    clientWithRoute (Proxy :: Proxy api) req baseurl
+  clientWithRoute Proxy q req baseurl =
+    clientWithRoute (Proxy :: Proxy api) q req baseurl
 
 instance HasClient t m api => HasClient t m (RemoteHost :> api) where
   type Client t m (RemoteHost :> api) = Client t m api
 
-  clientWithRoute Proxy req baseurl =
-    clientWithRoute (Proxy :: Proxy api) req baseurl
+  clientWithRoute Proxy q req baseurl =
+    clientWithRoute (Proxy :: Proxy api) q req baseurl
 
 instance HasClient t m api => HasClient t m (IsSecure :> api) where
   type Client t m (IsSecure :> api) = Client t m api
 
-  clientWithRoute Proxy req baseurl =
-    clientWithRoute (Proxy :: Proxy api) req baseurl
+  clientWithRoute Proxy q req baseurl =
+    clientWithRoute (Proxy :: Proxy api) q req baseurl
 
 instance HasClient t m subapi =>
   HasClient t m (WithNamedConfig name config subapi) where
 
   type Client t m (WithNamedConfig name config subapi) = Client t m subapi
-  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy subapi)
+  clientWithRoute Proxy q = clientWithRoute (Proxy :: Proxy subapi) q
 
 
 {- Note [Non-Empty Content Types]

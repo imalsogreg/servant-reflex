@@ -37,6 +37,7 @@ import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
 import           Reflex
+import           Reflex.Dom
 import           Reflex.Dom.Xhr
 
 -- * Accessing APIs as a Client
@@ -54,19 +55,19 @@ import           Reflex.Dom.Xhr
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
-client :: (HasClient layout) => Proxy layout -> Dynamic t BaseUrl -> Client t layout
+client :: (HasClient t m layout) => Proxy layout -> Dynamic t BaseUrl -> Client t m layout
 client p baseurl = clientWithRoute p defReq baseurl
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
-class HasClient t layout where
-  type Client t layout :: *
-  clientWithRoute :: Proxy layout -> Req t -> BaseUrl -> Client t layout
+class HasClient t m layout where
+  type Client t m layout :: *
+  clientWithRoute :: Proxy layout -> Req t -> BaseUrl -> Client t m layout
 
 
-instance (HasClient t a, HasClient t b) => HasClient t (a :<|> b) where
-  type Client t (a :<|> b) = Client t a :<|> Client t b
+instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
+  type Client t m (a :<|> b) = Client t m a :<|> Client t m b
   clientWithRoute Proxy req baseurl =
     clientWithRoute (Proxy :: Proxy a) req baseurl :<|>
     clientWithRoute (Proxy :: Proxy b) req baseurl
@@ -82,15 +83,15 @@ instance (HasClient t a, HasClient t b) => HasClient t (a :<|> b) where
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
-instance (Reflex t, KnownSymbol capture, ToHttpApiData a, HasClient t sublayout)
-      => HasClient t (Capture capture a :> sublayout) where
+instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m sublayout)
+      => HasClient t m (Capture capture a :> sublayout) where
 
-  type Client t (Capture capture a :> sublayout) =
-    Behavior t (Maybe a) -> Client t sublayout
+  type Client t m (Capture capture a :> sublayout) =
+    Behavior t (Maybe a) -> Client t m sublayout
 
   clientWithRoute Proxy req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
-                    (appendToPathParts p req)
+                    (prependToPathParts p req)
                     baseurl
 
     where p = fmap (unpack . toUrlPiece) val
@@ -98,10 +99,10 @@ instance (Reflex t, KnownSymbol capture, ToHttpApiData a, HasClient t sublayout)
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
-  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts)
-  ) => HasClient t (Verb method status cts' a) where
-  type Client t (Verb method status cts' a) =
-    Event t () -> m (Event t (Either XhrError a))
+  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
+  ) => HasClient t m (Verb method status cts' a) where
+  type Client t m (Verb method status cts' a) =
+    Event t () -> m (Event t (Maybe a, XhrResponse))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
   clientWithRoute Proxy req baseurl =
@@ -110,10 +111,10 @@ instance {-# OVERLAPPABLE #-}
 
 -- VERB (No content) --
 instance {-# OVERLAPPABLE #-}
-  (ReflectMethod method, Reflex t) =>
-  HasClient t (Verb method status cts NoContent) where
-  type Client t (Verb method status cts NoContent) =
-    Event t () -> m (Event t (Either XhrError ()))
+  (ReflectMethod method, MonadWidget t m) =>
+  HasClient t m (Verb method status cts NoContent) where
+  type Client t m (Verb method status cts NoContent) =
+    Event t () -> m (Event t XhrResponse)
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
   clientWithRoute Proxy req baseurl =
@@ -128,10 +129,10 @@ instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls,
     ReflectMethod method, cts' ~ (ct ': cts),
-    Reflex t
-  ) => HasClient (Verb method status cts' (Headers ls a)) where
-  type Client (Verb method status cts' (Headers ls a))
-    = Event t () -> m (Event t (Either XhrError ()))
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts' (Headers ls a)) where
+  type Client t m (Verb method status cts' (Headers ls a))
+    = Event t () -> m (Event t (Maybe a, XhrResponse))
       -- ExceptT ServantError IO (Headers ls a)
   clientWithRoute Proxy req baseurl = do
     let method = reflectMethod (Proxy :: Proxy method)
@@ -143,10 +144,10 @@ instance {-# OVERLAPPABLE #-}
 -- HEADERS Verb (No content) --
 instance {-# OVERLAPPABLE #-}
   ( BuildHeadersTo ls, ReflectMethod method,
-    Reflex t
-  ) => HasClient (Verb method status cts (Headers ls NoContent)) where
-  type Client (Verb method status cts (Headers ls NoContent))
-    = Event t () -> m (Event t (Either XhrError ()))
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
+  type Client t m (Verb method status cts (Headers ls NoContent))
+    = Event t () -> m (Event t XhrResponse)
       -- ExceptT ServantError IO (Headers ls NoContent)
   clientWithRoute Proxy req baseurl = do
     let method = reflectMethod (Proxy :: Proxy method)
@@ -170,11 +171,11 @@ instance {-# OVERLAPPABLE #-}
 -- > -- then you can just use "viewRefer" to query that endpoint
 -- > -- specifying Nothing or e.g Just "http://haskell.org/" as arguments
 instance (KnownSymbol sym, ToHttpApiData a,
-          HasClient sublayout, Reflex t)
-      => HasClient (Header sym a :> sublayout) where
+          HasClient t m sublayout, MonadWidget t m)
+      => HasClient t m (Header sym a :> sublayout) where
 
-  type Client t (Header sym a :> sublayout) =
-    Behavior t (Maybe a) -> Client t sublayout
+  type Client t m (Header sym a :> sublayout) =
+    Behavior t (Maybe a) -> Client t m sublayout
 
   clientWithRoute Proxy req baseurl mval =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -188,11 +189,11 @@ instance (KnownSymbol sym, ToHttpApiData a,
 
 -- | Using a 'HttpVersion' combinator in your API doesn't affect the client
 -- functions.
-instance HasClient t sublayout
-  => HasClient t (HttpVersion :> sublayout) where
+instance HasClient t m sublayout
+  => HasClient t m (HttpVersion :> sublayout) where
 
-  type Client t (HttpVersion :> sublayout) =
-    Client t sublayout
+  type Client t m (HttpVersion :> sublayout) =
+    Client t m sublayout
 
   clientWithRoute Proxy =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -223,22 +224,21 @@ instance HasClient t sublayout
 -- > -- then you can just use "getBooksBy" to query that endpoint.
 -- > -- 'getBooksBy Nothing' for all books
 -- > -- 'getBooksBy (Just "Isaac Asimov")' to get all books by Isaac Asimov
-instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
-      => HasClient (QueryParam sym a :> sublayout) where
+instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
+      => HasClient t m (QueryParam sym a :> sublayout) where
 
-  type Client (QueryParam sym a :> sublayout) =
+  type Client t m (QueryParam sym a :> sublayout) =
     -- TODO (Maybe a), or (Maybe (Maybe a))? (should the user be able to send a Nothing)
-    Behavior t (Maybe a) -> Client sublayout
+    Behavior t (Maybe a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy req baseurl mparam =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    (maybe req
+    clientWithRoute (Proxy :: Proxy sublayout) (prependToPathParts pname)
+                    (prependToPathParts req
                            (flip (appendToQueryString pname) req . Just)
                            mparamText
                     )
                     baseurl
-                    
 
     where pname  = cs pname'
           pname' = symbolVal (Proxy :: Proxy sym)
@@ -272,11 +272,11 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
 -- > -- 'getBooksBy []' for all books
 -- > -- 'getBooksBy ["Isaac Asimov", "Robert A. Heinlein"]'
 -- > --   to get all books by Asimov and Heinlein
-instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
-      => HasClient (QueryParams sym a :> sublayout) where
+instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
+      => HasClient t m (QueryParams sym a :> sublayout) where
 
-  type Client (QueryParams sym a :> sublayout) =
-    [a] -> Client sublayout
+  type Client t m (QueryParams sym a :> sublayout) =
+    [a] -> Client t m sublayout
 
   clientWithRoute Proxy req baseurl paramlist =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -284,7 +284,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
                             req
                             paramlist'
                     )
-                    baseurl 
+                    baseurl
 
     where pname  = cs pname'
           pname' = symbolVal (Proxy :: Proxy sym)
@@ -312,11 +312,11 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout)
 -- > -- then you can just use "getBooks" to query that endpoint.
 -- > -- 'getBooksBy False' for all books
 -- > -- 'getBooksBy True' to only get _already published_ books
-instance (KnownSymbol sym, HasClient sublayout)
-      => HasClient (QueryFlag sym :> sublayout) where
+instance (KnownSymbol sym, HasClient t m sublayout)
+      => HasClient t m (QueryFlag sym :> sublayout) where
 
-  type Client (QueryFlag sym :> sublayout) =
-    Bool -> Client sublayout
+  type Client t m (QueryFlag sym :> sublayout) =
+    Bool -> Client t m sublayout
 
   clientWithRoute Proxy req baseurl flag =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -358,10 +358,10 @@ instance (KnownSymbol sym, HasClient sublayout)
 -- > addBook = client myApi host 
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
-instance (MimeRender ct a, HasClient sublayout)
-      => HasClient (ReqBody (ct ': cts) a :> sublayout) where
+instance (MimeRender ct a, HasClient t m sublayout)
+      => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
-  type Client (ReqBody (ct ': cts) a :> sublayout) =
+  type Client t m (ReqBody (ct ': cts) a :> sublayout) =
     a -> Client sublayout
 
   clientWithRoute Proxy req baseurl body =
@@ -374,38 +374,38 @@ instance (MimeRender ct a, HasClient sublayout)
                     baseurl 
 
 -- | Make the querying function append @path@ to the request path.
-instance (KnownSymbol path, HasClient sublayout) => HasClient (path :> sublayout) where
-  type Client (path :> sublayout) = Client sublayout
+instance (KnownSymbol path, HasClient t m sublayout) => HasClient t m (path :> sublayout) where
+  type Client t m (path :> sublayout) = Client t m sublayout
 
   clientWithRoute Proxy req baseurl =
      clientWithRoute (Proxy :: Proxy sublayout)
-                     (appendToPath p req)
+                     (prependToPath (constant p) req)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
 
-instance HasClient api => HasClient (Vault :> api) where
-  type Client (Vault :> api) = Client api
+instance HasClient t m api => HasClient t m (Vault :> api) where
+  type Client t m (Vault :> api) = Client api
 
   clientWithRoute Proxy req baseurl =
     clientWithRoute (Proxy :: Proxy api) req baseurl
 
-instance HasClient api => HasClient (RemoteHost :> api) where
-  type Client (RemoteHost :> api) = Client api
+instance HasClient t m api => HasClient t m (RemoteHost :> api) where
+  type Client t m (RemoteHost :> api) = Client t m api
 
   clientWithRoute Proxy req baseurl =
     clientWithRoute (Proxy :: Proxy api) req baseurl
 
-instance HasClient api => HasClient (IsSecure :> api) where
-  type Client (IsSecure :> api) = Client api
+instance HasClient t m api => HasClient t m (IsSecure :> api) where
+  type Client t m (IsSecure :> api) = Client t m api
 
   clientWithRoute Proxy req baseurl =
     clientWithRoute (Proxy :: Proxy api) req baseurl
 
-instance HasClient subapi =>
-  HasClient (WithNamedConfig name config subapi) where
+instance HasClient t m subapi =>
+  HasClient t m (WithNamedConfig name config subapi) where
 
-  type Client (WithNamedConfig name config subapi) = Client subapi
+  type Client t m (WithNamedConfig name config subapi) = Client t m subapi
   clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy subapi)
 
 

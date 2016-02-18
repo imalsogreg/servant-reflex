@@ -60,7 +60,7 @@ import Web.HttpApiData
 -- instance Exception ServantError
 
 data Req t = Req
-  { reqPathParts :: [Behavior t String]
+  { reqPathParts :: [Behavior t (Maybe String)]
   , qParams      :: [(String, Behavior t String)]
   , reqBody      :: Maybe (ByteString, String)
   -- , reqAccept    :: [MediaType]
@@ -129,6 +129,15 @@ performRequest reqMethod req reqHost trigger = do
       xhrReq  = ffor urlPath $ \p -> XhrRequest reqMethod p def
   performRequestAsync (tag xhrReq trigger)
 
+-- TODO implement
+-- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
+performRequestNoBody ::
+  forall t m .MonadWidget t m -> String -> Req t -> Dynamic t BaseUrl
+                              -> Event t () -> m (Event t XhrResponse)
+performRequestNoBody reqMethod req reqHost trigger = do
+  performRequest reqMethod req reqHost trigger
+  -- return hdrs
+
 
   -- partialRequest <- liftIO $ reqToRequest req reqHost
 
@@ -170,13 +179,6 @@ performRequest reqMethod req reqHost trigger = do
 --   case mimeUnrender ct respBody of
 --     Left err -> throwE $ DecodeFailure err respCT respBody
 --     Right val -> return (hdrs, val)
-
--- TODO implement
--- performRequestNoBody :: String -> Req -> BaseUrl
---   -> ExceptT ServantError IO [HTTP.Header]
--- performRequestNoBody reqMethod req reqHost manager = do
---   (_status, _body, _ct, hdrs, _response) <- performRequest reqMethod req reqHost manager
---   return hdrs
 
 -- catchConnectionError :: IO a -> IO (Either ServantError a)
 -- catchConnectionError action =

@@ -1,4 +1,4 @@
-{}:
+{ try-reflex, ... }:
 let 
   pkgs = import <nixpkgs> {};
   try-reflex = import deps/try-reflex {};

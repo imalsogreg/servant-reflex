@@ -14,8 +14,8 @@ import           Snap.Http.Server
 import           Snap.Core
 import           Servant.Server.Internal.SnapShims
 
-import           Servant
-import           Servant.Server
+import           Servant        hiding (route)
+import           Servant.Server hiding (route)
 import           API
 
 -- * Example
@@ -37,7 +37,7 @@ testApi = Proxy
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API Snap
-server = return () :<|> return 100
+server = return 100
 
   where helloH name Nothing = helloH name (Just False)
         helloH name (Just False) = return . Greet $ "Hello, " <> name
@@ -54,4 +54,7 @@ test = serve testApi server
 
 -- Put this all to work!
 main :: IO ()
-main = quickHttpServe $ applicationToSnap (serve testApi server)
+main = quickHttpServe $ route
+    [ ("api", applicationToSnap (serve testApi server))
+    , ("", serveDirectory "example.jsexe")
+    ]

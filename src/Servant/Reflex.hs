@@ -5,6 +5,7 @@
 {-# LANGUAGE InstanceSigs         #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -28,6 +29,7 @@ import           Control.Applicative        ((<$>))
 import           Control.Monad.Trans (liftIO)
 import           Data.Default
 import           Data.Proxy
+import           Data.String.Conversions
 import           GHC.TypeLits
 import           Servant.API
 import           Servant.Common.BaseUrl
@@ -102,21 +104,27 @@ instance
       performAJAX requestBuilder responseParser trigEvents
     where
       requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
-      responseParser xhrResp = undefined
+      responseParser xhrResp =
+        hush . mimeUnrender (Proxy :: Proxy ct) =<<
+        (cs <$> _xhrResponse_responseText xhrResp)
+
+hush (Left _) = Nothing
+hush (Right a) = Just a
 
 performAJAX
     :: (MonadWidget t m)
     => (a -> XhrRequest)
     -- ^ Function to build the request
-    -> (XhrResponse -> b)
+    -> (XhrResponse -> Maybe b)
     -- ^ Function to parse the response
     -> Event t a
     -> m (Event t (a, b))
-performAJAX mkRequest parseResponse req =
-    performEventAsync $ ffor req $ \a cb -> do
+performAJAX mkRequest parseResponse req = do
+    e <- performEventAsync $ ffor req $ \a cb -> do
       _ <- newXMLHttpRequest (mkRequest a) $ \response ->
-             liftIO $ cb (a, parseResponse response)
+             liftIO $ cb $ (a,) <$> parseResponse response
       return ()
+    return $ fmapMaybe id e
 
 
 instance
@@ -131,7 +139,7 @@ instance
     performAJAX requestBuilder responseParser trigEvents
     where
       requestBuilder _ = XhrRequest "GET" (showBaseUrl baseurl) def
-      responseParser _ = ()
+      responseParser _ = Just ()
 
 -- -- | Pick a 'Method' and specify where the server you want to query is. You get
 -- -- back the full `Response`.

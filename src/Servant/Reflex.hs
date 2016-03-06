@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -23,16 +24,15 @@ module Servant.Reflex
 
 import           Control.Applicative        ((<$>))
 import           Control.Monad.Trans.Except
+import qualified Data.ByteString.Char8 as BS
 import           Data.ByteString.Lazy       (ByteString)
 import           Data.List
 import           Data.Proxy
 import           Data.String.Conversions
+import           Data.Maybe                 (maybeToList)
 import           Data.Text                  (unpack)
-import qualified Data.ByteString.Char8 as BS
+import           Data.Traversable           (sequenceA)
 import           GHC.TypeLits
--- import           Network.HTTP.Media
--- import qualified Network.HTTP.Types         as H
--- import qualified Network.HTTP.Types.Header  as HTTP
 import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
@@ -112,24 +112,24 @@ instance {-# OVERLAPPABLE #-}
     performRequestCT (Proxy :: Proxy ct) method req baseurl
       where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
 
--- TODO Overlapping error??
+-- -- TODO Overlapping error??
 -- -- VERB (No content) --
--- instance {-# OVERLAPPABLE #-}
+-- instance {-# OVERLAPPING #-}
 --   (ReflectMethod method, MonadWidget t m) =>
 --   HasClient t m (Verb method status cts NoContent) where
 --   type Client t m (Verb method status cts NoContent) =
 --     Event t () -> m (Event t XhrResponse)
 --     -- TODO: how to access input types here?
 --     -- ExceptT ServantError IO NoContent
---   clientWithRoute Proxy req baseurl =
---     performRequestNoBody method req baseurl
+--   clientWithRoute Proxy q req baseurl =
+--     performRequestNoBody q method req baseurl
 --       where method = reflectMethod (Proxy :: Proxy method)
 
--- HEADERS Verb (Content) --
--- Headers combinator not treated in fully general case,
--- in order to deny instances for (Headers ls (Capture "id" Int)),
--- a combinator that wouldn't make sense
--- TODO Overlapping??
+-- -- HEADERS Verb (Content) --
+-- -- Headers combinator not treated in fully general case,
+-- -- in order to deny instances for (Headers ls (Capture "id" Int)),
+-- -- a combinator that wouldn't make sense
+-- -- TODO Overlapping??
 -- instance {-# OVERLAPPABLE #-}
 --   -- Note [Non-Empty Content Types]
 --   ( MimeUnrender ct a, BuildHeadersTo ls,
@@ -232,7 +232,7 @@ instance HasClient t m sublayout
 -- > -- then you can just use "getBooksBy" to query that endpoint.
 -- > -- 'getBooksBy Nothing' for all books
 -- > -- 'getBooksBy (Just "Isaac Asimov")' to get all books by Isaac Asimov
-instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
+instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       => HasClient t m (QueryParam sym a :> sublayout) where
 
   type Client t m (QueryParam sym a :> sublayout) =
@@ -241,15 +241,12 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy q req baseurl mparam =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    q
-                    req -- TODO Must pass in the query param
-                    -- (req {qParams = (pname', map show mparam) : qParams req})
-                    baseurl
+    clientWithRoute (Proxy :: Proxy sublayout) q
+      (req {qParams = paramPair : qParams req}) baseurl
 
-    -- where pname  = cs pname'
-    --       pname' = symbolVal (Proxy :: Proxy sym)
-    --       mparamText = fmap toQueryParam mparam
+    where pname = symbolVal (Proxy :: Proxy sym)
+          p prm = fmap maybeToList $ (fmap . fmap) (unpack . toQueryParam) prm
+          paramPair = (pname, p mparam)
 
 -- | If you use a 'QueryParams' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -279,24 +276,20 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
 -- > -- 'getBooksBy []' for all books
 -- > -- 'getBooksBy ["Isaac Asimov", "Robert A. Heinlein"]'
 -- > --   to get all books by Asimov and Heinlein
-instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout)
+instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       => HasClient t m (QueryParams sym a :> sublayout) where
 
   type Client t m (QueryParams sym a :> sublayout) =
-    [a] -> Client t m sublayout
+    Behavior t [a] -> Client t m sublayout
 
-  clientWithRoute Proxy _ req baseurl paramlist = undefined
-    -- clientWithRoute (Proxy :: Proxy sublayout)
-    --                 (foldl' prependPathParts req paramlist')
-    --                 (foldl' (\ req' -> maybe req' (flip (appendToQueryString pname) req' . Just))
-    --                         req
-    --                         paramlist'
-    --                 )
-    --                 baseurl
+  clientWithRoute Proxy q req baseurl paramlist =
+    clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
 
-    -- where pname  = cs pname'
-    --       pname' = symbolVal (Proxy :: Proxy sym)
-    --       paramlist' = map (Just . toQueryParam) paramlist
+      where req'    = req { qParams =  (pname, params') : qParams req }
+            pname   = symbolVal (Proxy :: Proxy sym)
+            params' = (fmap . fmap) (unpack . toQueryParam)
+                        paramlist :: Behavior t [String]
+
 
 -- | If you use a 'QueryFlag' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take

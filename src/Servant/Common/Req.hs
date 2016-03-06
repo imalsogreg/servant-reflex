@@ -65,7 +65,7 @@ import Web.HttpApiData
 
 data Req t = Req
   { reqPathParts :: [Behavior t (Maybe String)]
-  , qParams      :: [(String, Behavior t String)]
+  , qParams      :: [(String, Behavior t [String])]
   , reqBody      :: Maybe (ByteString, String)
   -- , reqAccept    :: [MediaType]
   , headers      :: [(String, Behavior t String)]
@@ -83,39 +83,6 @@ addHeader name val req = req { headers = headers req
                                          ++ [(name, fmap (unpack . toHeader) val)]
 --                                      ++ [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
                              }
-
--- setRQBody :: ByteString -> String -> Req -> Req
--- setRQBody b t req = req { reqBody = Just (b, t) }
-
--- TODO: Helpful soon!
--- reqToRequest :: (Reflex t, Functor m, MonadThrow m) => Req t -> BaseUrl -> m Request
--- reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
---     setheaders . setAccept . setrqb . setQS <$> parseUrl url
-
---   where url = show $ nullURI { uriScheme = case reqScheme of
---                                   Http  -> "http:"
---                                   Https -> "https:"
---                              , uriAuthority = Just $
---                                  URIAuth { uriUserInfo = ""
---                                          , uriRegName = reqHost
---                                          , uriPort = ":" ++ show reqPort
---                                          }
---                              , uriPath = path ++ reqPath req
---                              }
-
---         setrqb r = case reqBody req of
---                      Nothing -> r
---                      Just (b,t) -> r { requestBody = RequestBodyLBS b
---                                      , requestHeaders = requestHeaders r
---                                                      ++ [(hContentType, cs . show $ t)] }
---         setQS = setQueryString $ queryTextToQuery (qs req)
---         setheaders r = r { requestHeaders = requestHeaders r
---                                          <> fmap toProperHeader (headers req) }
---         setAccept r = r { requestHeaders = filter ((/= "Accept") . fst) (requestHeaders r)
---                                         <> [("Accept", renderHeader $ reqAccept req)
---                                               | not . null . reqAccept $ req] }
---         toProperHeader (name, val) =
---           (fromString name, encodeUtf8 val)
 
 -- * performing requests
 
@@ -150,7 +117,9 @@ performRequestCT :: (MonadWidget t m, FromHttpApiData a, MimeUnrender ct a)
                  -> Event t () -> m (Event t (Maybe a, XhrResponse))
 performRequestCT ct reqMethod req reqHost trigger = do
   resp <- performRequest reqMethod req reqHost trigger
-  return $ ffor resp $ \xhr -> (hushed (mimeUnrender ct . BL.fromStrict . TE.encodeUtf8) =<< _xhrResponse_responseText xhr, xhr)
+  return $ ffor resp $ \xhr ->
+    (hushed (mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
+     =<< _xhrResponse_responseText xhr, xhr)
   where hushed :: (x -> Either e y) -> (x -> Maybe y)
         hushed f ea = case f ea of
           Left e  -> Nothing
@@ -202,3 +171,37 @@ performRequestCT ct reqMethod req reqHost trigger = do
 -- catchConnectionError action =
 --   catch (Right <$> action) $ \e ->
 --     pure . Left . ConnectionError $ SomeException (e :: HttpException)
+
+-- setRQBody :: ByteString -> String -> Req -> Req
+-- setRQBody b t req = req { reqBody = Just (b, t) }
+
+-- TODO: Helpful soon!
+-- reqToRequest :: (Reflex t, Functor m, MonadThrow m) => Req t -> BaseUrl -> m Request
+-- reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
+--     setheaders . setAccept . setrqb . setQS <$> parseUrl url
+
+--   where url = show $ nullURI { uriScheme = case reqScheme of
+--                                   Http  -> "http:"
+--                                   Https -> "https:"
+--                              , uriAuthority = Just $
+--                                  URIAuth { uriUserInfo = ""
+--                                          , uriRegName = reqHost
+--                                          , uriPort = ":" ++ show reqPort
+--                                          }
+--                              , uriPath = path ++ reqPath req
+--                              }
+
+--         setrqb r = case reqBody req of
+--                      Nothing -> r
+--                      Just (b,t) -> r { requestBody = RequestBodyLBS b
+--                                      , requestHeaders = requestHeaders r
+--                                                      ++ [(hContentType, cs . show $ t)] }
+--         setQS = setQueryString $ queryTextToQuery (qs req)
+--         setheaders r = r { requestHeaders = requestHeaders r
+--                                          <> fmap toProperHeader (headers req) }
+--         setAccept r = r { requestHeaders = filter ((/= "Accept") . fst) (requestHeaders r)
+--                                         <> [("Accept", renderHeader $ reqAccept req)
+--                                               | not . null . reqAccept $ req] }
+--         toProperHeader (name, val) =
+--           (fromString name, encodeUtf8 val)
+

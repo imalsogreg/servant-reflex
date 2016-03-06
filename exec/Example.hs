@@ -3,6 +3,7 @@
 
 module Main where
 
+import Data.Bool
 import Data.Maybe
 import Servant.API
 import Servant.Reflex
@@ -24,7 +25,7 @@ run :: forall t m. MonadWidget t m => m ()
 run = do
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> doRaw) =
+  let (getUnit :<|> getInt :<|> sayhi :<|> doRaw) =
         client api (Proxy :: Proxy m) (constDyn url)
 
   unitBtn  <- button "Get unit"
@@ -40,6 +41,15 @@ run = do
                   ,fmap (showXhrResponse . snd) intResponse
                   ]
   dynText r >> el "br" (return ()) >> text "Total: " >> display score
+
+  el "br" $ return ()
+  text "Name"
+  inp :: Dynamic t String <- fmap value (textInput def)
+  let checkedinp = fmap (\i -> bool (Just i) Nothing (null i)) (current inp)
+  sayhiClicks :: Event t () <- button "Say hi"
+  resp <- fmap fst <$> sayhi checkedinp sayhiClicks
+  el "br" $ return ()
+  dynText =<< holdDyn "No hi yet" (fmapMaybe id resp)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

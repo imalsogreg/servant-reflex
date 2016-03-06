@@ -9,6 +9,7 @@ module Servant.Common.Req where
 -- import Control.Monad.Catch (MonadThrow)
 -- import Control.Monad.IO.Class
 -- import Control.Monad.Trans.Except
+import Control.Applicative (liftA2)
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text.Encoding as TE
@@ -96,10 +97,26 @@ performRequest :: forall t m.MonadWidget t m => String -> Req t -> Dynamic t Bas
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
 performRequest reqMethod req _ trigger = do
+
+  -- Ridiculous functor-juggling! How to clean this up?
   let t :: Behavior t [Maybe String] = sequence $ reqPathParts req
   let urlParts :: Behavior t (Maybe [String]) = fmap sequence t
   let urlPath :: Behavior t (Maybe String) = (fmap.fmap) (L.intercalate "/") urlParts
-      xhrReq  = (fmap . fmap) (\p -> XhrRequest reqMethod p def) urlPath
+
+  let oneNamedPair :: String -> [String] -> String
+      oneNamedPair pName ps =
+        L.intercalate "&" $ map (\p -> pName ++ "=" ++ p) ps
+
+      t' :: [Behavior t String]
+      t' = map (\(pName, pVals) -> fmap (oneNamedPair pName) pVals)
+            (qParams req)
+
+      queryString :: Behavior t String
+      queryString = fmap (L.intercalate "&") (sequence t')
+
+      xhrUrl = (liftA2 . liftA2) (\u q -> u ++ '?' : q) urlPath (fmap Just queryString)
+      xhrReq = (fmap . fmap) (\p -> XhrRequest reqMethod p def) xhrUrl
+
   performRequestAsync (fmapMaybe id $ tag xhrReq trigger)
 
 -- TODO implement

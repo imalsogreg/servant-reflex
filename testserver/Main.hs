@@ -41,15 +41,10 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> serveDirectory "static"
-
-  -- where helloH name Nothing = helloH name (Just False)
-  --       helloH name (Just False) = return . Greet $ "Hello, " <> name
-  --       helloH name (Just True) = return . Greet . toUpper $ "Hello, " <> name
-
-  --       postGreetH greet = return greet
-
-  --       deleteGreetH _ = return ()
+server = return () :<|> return 100 :<|> sayhi :<|> serveDirectory "static"
+  where sayhi nm = case nm of
+          Nothing -> return "Sorry, who are you?"
+          Just n  -> return $ "Hi, " <> n <> "!"
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.
@@ -59,7 +54,7 @@ test = serve testApi server
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
   addRoutes [("", applicationToSnap test)
-            -- ,("",    serveDirectory "static")
+            ,("", serveDirectory "static")
             ]
   return App
 

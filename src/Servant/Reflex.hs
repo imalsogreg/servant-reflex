@@ -245,7 +245,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       (req {qParams = paramPair : qParams req}) baseurl
 
     where pname = symbolVal (Proxy :: Proxy sym)
-          p prm = fmap maybeToList $ (fmap . fmap) (unpack . toQueryParam) prm
+          p prm = QueryPartParam $ fmap maybeToList $ (fmap . fmap) (unpack . toQueryParam) prm
           paramPair = (pname, p mparam)
 
 -- | If you use a 'QueryParams' in one of your endpoints in your API,
@@ -287,8 +287,8 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 
       where req'    = req { qParams =  (pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' = (fmap . fmap) (unpack . toQueryParam)
-                        paramlist :: Behavior t [String]
+            params' = QueryPartParam $ (fmap . fmap) (unpack . toQueryParam)
+                        paramlist
 
 
 -- | If you use a 'QueryFlag' in one of your endpoints in your API,
@@ -315,21 +315,18 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 -- > -- 'getBooksBy True' to only get _already published_ books
 
 -- TODO Bring back
--- instance (KnownSymbol sym, HasClient t m sublayout)
---       => HasClient t m (QueryFlag sym :> sublayout) where
+instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
+      => HasClient t m (QueryFlag sym :> sublayout) where
 
---   type Client t m (QueryFlag sym :> sublayout) =
---     Bool -> Client t m sublayout
+  type Client t m (QueryFlag sym :> sublayout) =
+    Behavior t Bool -> Client t m sublayout
 
---   clientWithRoute Proxy req baseurl flag =
---     clientWithRoute (Proxy :: Proxy sublayout)
---                     (if flag
---                        then appendToQueryString paramname Nothing req
---                        else req
---                     )
---                     baseurl
+  clientWithRoute Proxy q req baseurl flag =
+    clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
 
---     where paramname = cs $ symbolVal (Proxy :: Proxy sym)
+    where req'     = req { qParams = thisPair : qParams req }
+          thisPair = (pName, QueryPartFlag flag) :: (String, QueryPart t)
+          pName    = symbolVal (Proxy :: Proxy sym)
 
 
 -- | Pick a 'Method' and specify where the server you want to query is. You get

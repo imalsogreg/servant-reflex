@@ -28,28 +28,42 @@ run = do
   let (getUnit :<|> getInt :<|> sayhi :<|> doRaw) =
         client api (Proxy :: Proxy m) (constDyn url)
 
-  unitBtn  <- button "Get unit"
-  intBtn   <- button "Get int"
+  elClass "div" "demo-group" $ do
+    unitBtn  <- button "Get unit"
+    intBtn   <- button "Get int"
 
-  unitResponse <- getUnit unitBtn
-  intResponse :: Event t (Maybe Int, XhrResponse) <- getInt intBtn
+    unitResponse <- getUnit unitBtn
+    intResponse :: Event t (Maybe Int, XhrResponse) <- getInt intBtn
 
-  score <- foldDyn (+) 0 (fmapMaybe fst intResponse)
+    score <- foldDyn (+) 0 (fmapMaybe fst intResponse)
 
-  r <- holdDyn "Waiting" $
+    r <- holdDyn "Waiting" $
          leftmost [fmap (showXhrResponse . snd) unitResponse
                   ,fmap (showXhrResponse . snd) intResponse
                   ]
-  dynText r >> el "br" (return ()) >> text "Total: " >> display score
+    dynText r >> el "br" (return ()) >> text "Total: " >> display score
 
-  el "br" $ return ()
-  text "Name"
-  inp :: Dynamic t String <- fmap value (textInput def)
-  let checkedinp = fmap (\i -> bool (Just i) Nothing (null i)) (current inp)
-  sayhiClicks :: Event t () <- button "Say hi"
-  resp <- fmap fst <$> sayhi checkedinp sayhiClicks
-  el "br" $ return ()
-  dynText =<< holdDyn "No hi yet" (fmapMaybe id resp)
+  elClass "div" "demo-group" $ do
+
+    text "Name"
+    el "br" $ return ()
+    inp :: Dynamic t String <- fmap value (textInput def)
+    let checkedName = fmap (\i -> bool (Just i) Nothing (null i)) (current inp)
+    el "br" $ return ()
+
+    text "Greetings (space-separated)"
+    el "br" $ return ()
+    greetings <- fmap (fmap words . current . value) (textInput def)
+
+    el "br" $ return ()
+
+    gusto <- value <$> checkbox False def
+
+    el "br" $ return ()
+    sayhiClicks :: Event t () <- button "Say hi"
+
+    resp <- fmap fst <$> sayhi checkedName greetings (current gusto) sayhiClicks
+    dynText =<< holdDyn "No hi yet" (fmapMaybe id resp)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

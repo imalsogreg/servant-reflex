@@ -1,17 +1,14 @@
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Servant.Common.Req where
 
--- import Control.Exception
--- import Control.Monad
--- import Control.Monad.Catch (MonadThrow)
--- import Control.Monad.IO.Class
--- import Control.Monad.Trans.Except
 import Control.Applicative (liftA2)
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
 import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.Maybe
 import qualified Data.Text.Encoding as TE
 -- import qualified Data.Foldable as F
 import qualified Data.List as L
@@ -64,9 +61,13 @@ import Web.HttpApiData
 
 -- instance Exception ServantError
 
+data QueryPart t = QueryPartParam (Behavior t [String])
+                 | QueryPartFlag  (Behavior t Bool)
+
 data Req t = Req
   { reqPathParts :: [Behavior t (Maybe String)]
-  , qParams      :: [(String, Behavior t [String])]
+  -- , qParams      :: [(String, Behavior t [QueryPart])]
+  , qParams      :: [(String, QueryPart t)]
   , reqBody      :: Maybe (ByteString, String)
   -- , reqAccept    :: [MediaType]
   , headers      :: [(String, Behavior t String)]
@@ -103,21 +104,40 @@ performRequest reqMethod req _ trigger = do
   let urlParts :: Behavior t (Maybe [String]) = fmap sequence t
   let urlPath :: Behavior t (Maybe String) = (fmap.fmap) (L.intercalate "/") urlParts
 
-  let oneNamedPair :: String -> [String] -> String
-      oneNamedPair pName ps =
-        L.intercalate "&" $ map (\p -> pName ++ "=" ++ p) ps
+      queryPartString :: (String, QueryPart t) -> Behavior t (Maybe String)
+      queryPartString (pName, qp) = case qp of
+        QueryPartParam ps -> ffor ps $ \pStrings -> -- case null pStrings of
+          if null pStrings
+          then Nothing
+          else Just (L.intercalate "&" (fmap (\p -> pName ++ '=' : p) pStrings))
+        QueryPartFlag fl -> ffor fl $ \case
+          True ->  Just pName
+          False -> Nothing
 
-      t' :: [Behavior t String]
-      t' = map (\(pName, pVals) -> fmap (oneNamedPair pName) pVals)
-            (qParams req)
-
-      queryString :: Behavior t String
-      queryString = fmap (L.intercalate "&") (sequence t')
-
-      xhrUrl = (liftA2 . liftA2) (\u q -> u ++ '?' : q) urlPath (fmap Just queryString)
+      queryPartStrings = map queryPartString (qParams req)
+      queryPartStrings' = sequence queryPartStrings :: Behavior t [Maybe String]
+      queryString :: Behavior t (Maybe String ) =
+        ffor queryPartStrings' $ \qs -> Just (L.intercalate "&" (catMaybes qs))
+      xhrUrl =  (liftA2 . liftA2) (\p q -> p ++ '?' : q) urlPath queryString
       xhrReq = (fmap . fmap) (\p -> XhrRequest reqMethod p def) xhrUrl
 
   performRequestAsync (fmapMaybe id $ tag xhrReq trigger)
+
+  -- let oneNamedPair :: String -> [QueryPart] -> String
+  --     oneNamedPair pName ps =
+  --       L.intercalate "&" $ ffor ps $ \case
+  --         QueryPartParam pval -> pName ++ "=" ++ pval
+  --         QueryPartFlag True  -> pName
+  --         QueryPartFlag False -> error "Impossible case"
+
+  --     t' :: [Behavior t String]
+  --     t' = map (\(pName, pVals) -> fmap (oneNamedPair pName) pVals)
+  --           (qParams req)
+
+  --     queryString :: Behavior t String
+  --     queryString = fmap (L.intercalate "&") (sequence t')
+
+  --     xhrUrl = (liftA2 . liftA2) (\u q -> u ++ '?' : q) urlPath (fmap Just queryString)
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
@@ -137,9 +157,9 @@ performRequestCT ct reqMethod req reqHost trigger = do
   return $ ffor resp $ \xhr ->
     (hushed (mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
      =<< _xhrResponse_responseText xhr, xhr)
-  where hushed :: (x -> Either e y) -> (x -> Maybe y)
+  where hushed :: (x -> Either e y) -> x -> Maybe y
         hushed f ea = case f ea of
-          Left e  -> Nothing
+          Left  _ -> Nothing
           Right a -> Just a
 
 

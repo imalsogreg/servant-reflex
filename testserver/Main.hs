@@ -6,9 +6,12 @@
 {-# LANGUAGE TypeOperators     #-}
 
 import           Data.Aeson
+import           Data.Bool
+import           Data.Char (toUpper)
+import qualified Data.List as L
 import           Data.Monoid
 import           Data.Proxy
-import           Data.Text
+import           Data.Text hiding (length, null, map, head, toUpper)
 import           GHC.Generics
 import           Snap.Http.Server
 import           Snap.Core
@@ -42,9 +45,16 @@ data App = App
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
 server = return () :<|> return 100 :<|> sayhi :<|> serveDirectory "static"
-  where sayhi nm = case nm of
-          Nothing -> return "Sorry, who are you?"
-          Just n  -> return $ "Hi, " <> n <> "!"
+  where sayhi nm greetings withGusto = case nm of
+          Nothing -> return ("Sorry, who are you?" :: String)
+          Just n  -> do
+           let modifier  = bool id (map toUpper) withGusto
+               greetPart
+                 | null greetings        = "Hi, "
+                 | length greetings == 1 = L.head greetings ++ ", "
+                 | otherwise             = L.intercalate ", " (L.init greetings)
+                                       ++ ", and " ++ L.last greetings ++ ", "
+           return . modifier $ greetPart ++ n
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.

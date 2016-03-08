@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module Servant.Common.Req where
 
 import Control.Applicative (liftA2)
@@ -13,6 +14,7 @@ import qualified Data.Text.Encoding as TE
 -- import qualified Data.Foldable as F
 import qualified Data.List as L
 import Data.Proxy
+import qualified Data.Map as Map
 -- import Data.Monoid
 -- import Data.String
 -- import Data.String.Conversions
@@ -66,15 +68,14 @@ data QueryPart t = QueryPartParam (Behavior t [String])
 
 data Req t = Req
   { reqPathParts :: [Behavior t (Maybe String)]
-  -- , qParams      :: [(String, Behavior t [QueryPart])]
   , qParams      :: [(String, QueryPart t)]
-  , reqBody      :: Maybe (ByteString, String)
-  -- , reqAccept    :: [MediaType]
+  , reqBody      :: Behavior t (Maybe (BL.ByteString, String))
+  -- , reqAccept    :: [MediaType]  -- TODO ?
   , headers      :: [(String, Behavior t String)]
   }
 
-defReq :: Req t
-defReq = Req [] [] Nothing []
+defReq :: Reflex t => Req t
+defReq = Req [] [] (constant Nothing) []
 
 prependToPathParts :: Reflex t => Behavior t (Maybe String) -> Req t -> Req t
 prependToPathParts p req =
@@ -119,6 +120,18 @@ performRequest reqMethod req _ trigger = do
       queryString :: Behavior t (Maybe String ) =
         ffor queryPartStrings' $ \qs -> Just (L.intercalate "&" (catMaybes qs))
       xhrUrl =  (liftA2 . liftA2) (\p q -> p ++ '?' : q) urlPath queryString
+
+      xhrHeaders :: Behavior t [(String, String)]
+      xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
+
+
+      mkConfig hs rb = case rb of
+                  Nothing              -> def { _xhrRequestConfig_headers  = Map.fromList hs }
+                  (Just (bBytes, bCT)) -> def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                                                 , _xhrRequestConfig_headers  =
+                                                    Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
+
+      xhrOpts = liftA2 mkConfig xhrHeaders (reqBody req)
       xhrReq = (fmap . fmap) (\p -> XhrRequest reqMethod p def) xhrUrl
 
   performRequestAsync (fmapMaybe id $ tag xhrReq trigger)

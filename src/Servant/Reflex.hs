@@ -26,6 +26,7 @@ import           Control.Applicative        ((<$>))
 import           Control.Monad.Trans.Except
 import qualified Data.ByteString.Char8 as BS
 import           Data.ByteString.Lazy       (ByteString)
+import qualified Data.CaseInsensitive as CI
 import           Data.List
 import           Data.Proxy
 import           Data.String.Conversions
@@ -33,6 +34,7 @@ import           Data.Maybe                 (maybeToList)
 import           Data.Text                  (unpack)
 import           Data.Traversable           (sequenceA)
 import           GHC.TypeLits
+import qualified Network.HTTP.Media         as M
 import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
@@ -358,25 +360,24 @@ instance (MonadWidget t m) => HasClient t m Raw where
 -- > myApi = Proxy
 -- >
 -- > addBook :: Book -> ExceptT String IO Book
--- > addBook = client myApi host 
+-- > addBook = client myApi host
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
 
--- TODO: Bring back
--- instance (MimeRender ct a, HasClient t m sublayout)
---       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
+instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
+      => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
---   type Client t m (ReqBody (ct ': cts) a :> sublayout) =
---     a -> Client sublayout
+  type Client t m (ReqBody (ct ': cts) a :> sublayout) =
+    Behavior t (Maybe a) -> Client t m sublayout
 
---   clientWithRoute Proxy req baseurl body =
---     clientWithRoute (Proxy :: Proxy sublayout)
---                     (let ctProxy = Proxy :: Proxy ct
---                      in setRQBody (mimeRender ctProxy body)
---                                   (contentType ctProxy)
---                                   req
---                     )
---                     baseurl 
+  clientWithRoute Proxy q req baseurl body =
+    clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
+       where req'        = req { reqBody = bodyBytesCT }
+             ctProxy     = Proxy :: Proxy ct
+             ctString    = BS.unpack . CI.original . M.mainType $ contentType ctProxy
+             bodyBytesCT = (fmap . fmap)
+                           (\b -> (mimeRender ctProxy b, ctString))
+                           body
 
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m (path :> sublayout) where

@@ -106,6 +106,8 @@ Plug any of these functions into your reactive frontend to consume backend servi
     display =<< holdDyn Nothing outputDouble
 ```
 
+For a great introduction to recative DOM building, see the [README](https://github.com/reflex-frp/reflex-platform) for the `reflex-platform`.
+
 ## Input validation
 
 The frontend's widgets are sometimes in a state where a valid XHR request can be generated, and sometimes not. When all of the input parameters (`Behavior t (Maybe a)`) are `Just _`, the trigger event will communicate with the server. When any of the inputs is `Nothing`, no XHR request will be made (the event will be silently dropped). In the future input parameters will be encoded as `Behavior t (Either e a)`, and triggers that occur when a Request can't be generated will immediately return a `Left e`, which you could use to draw an error in the page.

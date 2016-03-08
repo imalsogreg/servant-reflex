@@ -65,6 +65,7 @@ type API = "getint"  :> Get '[JSON] Int
 These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Maybe a)` values. You provide a trigger event and receive an `Event t (Maybe r, XhrResponse)`, with responses from the API server (which you would write with `servant-server`).
 
 ```haskell
+   -- No need to write these functions. servant-reflex creates them for you!
    getint :: MonadWidget t m 
           => Event t ()  -- ^ Trigger the XHR Request
           -> m (Event t (Maybe (Int, XhrResponse))) -- ^ Consume the answer

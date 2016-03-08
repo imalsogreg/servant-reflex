@@ -6,7 +6,7 @@ This library lets you automatically derive [`reflex-dom`](https://github.com/ref
 
 ## Building the example
 
-You will need a recent [GHCJS installation](https://github.com/ghcjs/ghcjs), or use the [reflex-platform](https://github.com/reflex-frp/reflex-platform). A [snap 1.0](https://github.com/snapframework) is provided for serving the api. `Snap 1.0` is not yet on Hackage, but we bundle the sources as a git submodule. To install everything with cabal:
+You will need a recent [GHCJS installation](https://github.com/ghcjs/ghcjs), or use the [reflex-platform](https://github.com/reflex-frp/reflex-platform). A [snap](https://github.com/snapframework) server using [servant-snap](https://github.com/haskell-servant/servant-snap) is provided for serving the api. `Snap 1.0` is not yet on Hackage (and servant-snap is still experimental), but we bundle the sources as a git submodule. To install everything with cabal:
 
 ```
 git clone https://github.com/mightybyte/servant-reflex

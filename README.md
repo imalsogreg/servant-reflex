@@ -65,21 +65,21 @@ type API = "getint"  :> Get '[JSON] Int
 These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Maybe a)` values. You provide a trigger event and receive an `Event t (Maybe r, XhrResponse)`, with responses from the API server (which you would write with `servant-server`).
 
 ```haskell
-   -- getint :: MonadWidget t m 
-   --        => Event t ()  -- ^ Trigger the XHR Request
-   --        -> m (Event t (Maybe (Int, XhrResponse))) -- ^ Consume the answer
+   getint :: MonadWidget t m 
+          => Event t ()  -- ^ Trigger the XHR Request
+          -> m (Event t (Maybe (Int, XhrResponse))) -- ^ Consume the answer
    
-   -- sayhi :: MonadWidget t m
-   --       => Behavior t (Maybe String) -- ^ One input parameter - the 'name'
-   --       -> Behavior t [String]       -- ^ Another input - list of preferred greetings
-   --       -> Behavior t Bool           -- ^ Flag for capitalizing the response
-   --       -> Event t ()                -- ^ Trigger the XHR Request
-            -> m (Event t (Maybe String, XhrResponse))
+   sayhi :: MonadWidget t m
+         => Behavior t (Maybe String) -- ^ One input parameter - the 'name'
+         -> Behavior t [String]       -- ^ Another input - list of preferred greetings
+         -> Behavior t Bool           -- ^ Flag for capitalizing the response
+         -> Event t ()                -- ^ Trigger the XHR Request
+         -> m (Event t (Maybe String, XhrResponse))
 
-   -- doubleit :: MonadWidget t m
-   --          => Behavior t (Maybe Double)
-   --          -> Event t ()
-   --          -> m (Event t (Maybe Double, XhrResponse))
+   doubleit :: MonadWidget t m
+            => Behavior t (Maybe Double)
+            -> Event t ()
+            -> m (Event t (Maybe Double, XhrResponse))
 ```
 
 Plug any of these functions into your reactive frontend to consume backend services without having to build XhrRequests by hand.

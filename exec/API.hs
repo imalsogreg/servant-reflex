@@ -8,8 +8,10 @@ import Servant.API
 -- | API spec for server, client, and docs
 type API = "getunit" :> Get '[JSON] ()
       :<|> "getint"  :> Get '[JSON] Int
-      :<|> "sayhi"   :> QueryParam  "username" String 
+      :<|> "sayhi"   :> QueryParam  "username" String
                      :> QueryParams "greetings" String
                      :> QueryFlag   "gusto"
                      :> Get '[JSON] String
+      :<|> "double" :> ReqBody '[JSON] Double
+                    :> Post '[JSON] Double
       :<|> Raw

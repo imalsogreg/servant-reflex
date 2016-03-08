@@ -67,15 +67,16 @@ data QueryPart t = QueryPartParam (Behavior t [String])
                  | QueryPartFlag  (Behavior t Bool)
 
 data Req t = Req
-  { reqPathParts :: [Behavior t (Maybe String)]
+  { reqMethod    :: String
+  , reqPathParts :: [Behavior t (Maybe String)]
   , qParams      :: [(String, QueryPart t)]
-  , reqBody      :: Behavior t (Maybe (BL.ByteString, String))
+  , reqBody      :: Maybe (Behavior t (Maybe (BL.ByteString, String)))
   -- , reqAccept    :: [MediaType]  -- TODO ?
   , headers      :: [(String, Behavior t String)]
   }
 
 defReq :: Reflex t => Req t
-defReq = Req [] [] (constant Nothing) []
+defReq = Req "GET" [] [] Nothing []
 
 prependToPathParts :: Reflex t => Behavior t (Maybe String) -> Req t -> Req t
 prependToPathParts p req =
@@ -117,22 +118,27 @@ performRequest reqMethod req _ trigger = do
 
       queryPartStrings = map queryPartString (qParams req)
       queryPartStrings' = sequence queryPartStrings :: Behavior t [Maybe String]
-      queryString :: Behavior t (Maybe String ) =
+      queryString :: Behavior t (Maybe String) =
         ffor queryPartStrings' $ \qs -> Just (L.intercalate "&" (catMaybes qs))
-      xhrUrl =  (liftA2 . liftA2) (\p q -> p ++ '?' : q) urlPath queryString
+      xhrUrl =  (liftA2 . liftA2) (\p q -> if null q then p else p ++ '?' : q) urlPath queryString
 
       xhrHeaders :: Behavior t [(String, String)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
 
-      mkConfig hs rb = case rb of
-                  Nothing              -> def { _xhrRequestConfig_headers  = Map.fromList hs }
-                  (Just (bBytes, bCT)) -> def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
-                                                 , _xhrRequestConfig_headers  =
-                                                    Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
+      mkConfigBody :: [(String,String)] -> (Maybe (BL.ByteString, String)) -> Maybe XhrRequestConfig
+      mkConfigBody hs rb = case rb of
+                  Nothing              -> Nothing
+                  (Just (bBytes, bCT)) ->
+                    Just $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                               , _xhrRequestConfig_headers  =
+                                   Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
 
-      xhrOpts = liftA2 mkConfig xhrHeaders (reqBody req)
-      xhrReq = (fmap . fmap) (\p -> XhrRequest reqMethod p def) xhrUrl
+      xhrOpts :: Behavior t (Maybe XhrRequestConfig)
+      xhrOpts = case reqBody req of
+        Nothing    -> fmap (\h -> Just $ def { _xhrRequestConfig_headers = Map.fromList h }) xhrHeaders
+        Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
+      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMethod p opt) xhrUrl xhrOpts
 
   performRequestAsync (fmapMaybe id $ tag xhrReq trigger)
 

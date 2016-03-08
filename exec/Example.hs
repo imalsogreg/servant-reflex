@@ -9,6 +9,7 @@ import Servant.API
 import Servant.Reflex
 import API
 import Data.Proxy
+import Text.Read (readMaybe)
 import Reflex.Dom
 
 api :: Proxy API
@@ -25,7 +26,7 @@ run :: forall t m. MonadWidget t m => m ()
 run = do
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> doRaw) =
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> doRaw) =
         client api (Proxy :: Proxy m) (constDyn url)
 
   elClass "div" "demo-group" $ do
@@ -64,6 +65,14 @@ run = do
 
     resp <- fmap fst <$> sayhi checkedName greetings (current gusto) sayhiClicks
     dynText =<< holdDyn "No hi yet" (fmapMaybe id resp)
+
+  elClass "div" "demo-group" $ do
+    text "A Double to double"
+    el "br" $ return ()
+    dblinp <- value <$> textInput def
+    dblBtn <- button "Double it"
+    dblResp :: Event t (Maybe Double) <- fmap fst <$> dbl (fmap readMaybe $ current dblinp) dblBtn
+    display =<< holdDyn "No number yet" (fmap show $ fmapMaybe id dblResp)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

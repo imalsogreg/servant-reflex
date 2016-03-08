@@ -111,8 +111,9 @@ instance {-# OVERLAPPABLE #-}
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
   clientWithRoute Proxy q req baseurl =
-    performRequestCT (Proxy :: Proxy ct) method req baseurl
+    performRequestCT (Proxy :: Proxy ct) method req' baseurl
       where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
+            req' = req { reqMethod = method }
 
 -- -- TODO Overlapping error??
 -- -- VERB (No content) --
@@ -374,10 +375,11 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
        where req'        = req { reqBody = bodyBytesCT }
              ctProxy     = Proxy :: Proxy ct
-             ctString    = BS.unpack . CI.original . M.mainType $ contentType ctProxy
-             bodyBytesCT = (fmap . fmap)
-                           (\b -> (mimeRender ctProxy b, ctString))
-                           body
+             ctString    = show $ contentType ctProxy
+             --ctString    = BS.unpack . CI.original . M.mainType $ contentType ctProxy
+             bodyBytesCT = Just $ (fmap . fmap)
+                             (\b -> (mimeRender ctProxy b, ctString))
+                             body
 
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m (path :> sublayout) where

@@ -44,7 +44,7 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> serveDirectory "static"
+server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> serveDirectory "static"
   where sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: String)
           Just n  -> do
@@ -55,6 +55,7 @@ server = return () :<|> return 100 :<|> sayhi :<|> serveDirectory "static"
                  | otherwise             = L.intercalate ", " (L.init greetings)
                                        ++ ", and " ++ L.last greetings ++ ", "
            return . modifier $ greetPart ++ n
+        dbl x = return $ x * 2
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.
@@ -64,7 +65,7 @@ test = serve testApi server
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
   addRoutes [("", applicationToSnap test)
-            ,("", serveDirectory "static")
+--             ,("", serveDirectory "static")
             ]
   return App
 

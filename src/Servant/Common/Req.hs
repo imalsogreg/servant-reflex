@@ -162,10 +162,11 @@ performRequest reqMethod req _ trigger = do
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
   -- TODO Proxy probably not needed
 performRequestNoBody ::
-  forall t m .MonadWidget t m => Proxy m -> String -> Req t -> Dynamic t BaseUrl
-                              -> Event t () -> m (Event t XhrResponse)
-performRequestNoBody _ reqMethod req reqHost trigger = do
-  performRequest reqMethod req reqHost trigger
+  forall t m .MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
+                              -> Event t () -> m (Event t (Maybe NoContent, XhrResponse))
+performRequestNoBody reqMethod req reqHost trigger = do
+  -- performRequest reqMethod req reqHost trigger
+  undefined
   -- return hdrs
 
 performRequestCT :: (MonadWidget t m, FromHttpApiData a, MimeUnrender ct a)

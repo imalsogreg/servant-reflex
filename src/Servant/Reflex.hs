@@ -115,18 +115,17 @@ instance {-# OVERLAPPABLE #-}
       where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
--- -- TODO Overlapping error??
 -- -- VERB (No content) --
--- instance {-# OVERLAPPING #-}
---   (ReflectMethod method, MonadWidget t m) =>
---   HasClient t m (Verb method status cts NoContent) where
---   type Client t m (Verb method status cts NoContent) =
---     Event t () -> m (Event t XhrResponse)
---     -- TODO: how to access input types here?
---     -- ExceptT ServantError IO NoContent
---   clientWithRoute Proxy q req baseurl =
---     performRequestNoBody q method req baseurl
---       where method = reflectMethod (Proxy :: Proxy method)
+instance {-# OVERLAPPING #-}
+  (ReflectMethod method, MonadWidget t m) =>
+  HasClient t m (Verb method status cts NoContent) where
+  type Client t m (Verb method status cts NoContent) =
+    Event t () -> m (Event t (Maybe NoContent, XhrResponse))
+    -- TODO: how to access input types here?
+    -- ExceptT ServantError IO NoContent
+  clientWithRoute Proxy q req baseurl =
+    performRequestNoBody method req baseurl
+      where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
 
 -- -- HEADERS Verb (Content) --
 -- -- Headers combinator not treated in fully general case,

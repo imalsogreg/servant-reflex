@@ -15,3 +15,28 @@ type API = "getunit" :> Get '[JSON] ()
       :<|> "double" :> ReqBody '[JSON] Double
                     :> Post '[JSON] Double
       :<|> Raw
+
+type GET = Get '[JSON] ()
+
+-- Imported the comprehensive API example for testing.
+-- https://github.com/haskell-servant/servant/blob/master/servant/src/Servant/API/Internal/Test/ComprehensiveAPI.hs
+type ComprehensiveAPI =
+  GET :<|>
+  Get '[JSON] Int :<|>
+  Capture "foo" Int :> GET :<|>
+  Header "foo" Int :> GET :<|>
+  HttpVersion :> GET :<|>
+  IsSecure :> GET :<|>
+  QueryParam "foo" Int :> GET :<|>
+  QueryParams "foo" Int :> GET :<|>
+  QueryFlag "foo" :> GET :<|>
+-- Raw :<|>
+  RemoteHost :> GET :<|>
+  ReqBody '[JSON] Int :> GET :<|>
+  Get '[JSON] (Headers '[Header "foo" Int] ()) :<|>
+  "foo" :> GET :<|>
+  Vault :> GET :<|>
+  Verb 'POST 204 '[JSON] () :<|>
+  Verb 'POST 204 '[JSON] Int
+-- This one isn't in scope
+--  :<|> WithNamedContext "foo" '[] GET

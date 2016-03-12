@@ -65,7 +65,7 @@ test = serve testApi server
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
   addRoutes [("", applicationToSnap test)
---             ,("", serveDirectory "static")
+            ,("", serveDirectory "static")
             ]
   return App
 

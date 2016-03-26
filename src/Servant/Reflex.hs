@@ -159,7 +159,7 @@ instance {-# OVERLAPPING #-}
 --       -- ExceptT ServantError IO (Headers ls NoContent)
 --   clientWithRoute Proxy req baseurl = do
 --     let method = reflectMethod (Proxy :: Proxy method)
---     hdrs <- performRequestNoBody method req baseurl 
+--     hdrs <- performRequestNoBody method req baseurl
 --     return $ Headers { getResponse = NoContent
 --                      , getHeadersHList = buildHeadersTo hdrs
 --                      }
@@ -410,9 +410,9 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
     clientWithRoute (Proxy :: Proxy api) q req baseurl
 
 instance HasClient t m subapi =>
-  HasClient t m (WithNamedConfig name config subapi) where
+  HasClient t m (WithNamedContext name config subapi) where
 
-  type Client t m (WithNamedConfig name config subapi) = Client t m subapi
+  type Client t m (WithNamedContext name config subapi) = Client t m subapi
   clientWithRoute Proxy q = clientWithRoute (Proxy :: Proxy subapi) q
 
 

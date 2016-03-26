@@ -3,7 +3,7 @@ Version: 0.1
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: AllRightsReserved
-License-file: LICENSE
+License-file: LICENSE.md
 Author: Doug Beardsley
 Maintainer: mightybyte@gmail.com
 Stability: Experimental
@@ -12,10 +12,10 @@ Build-type: Simple
 Cabal-version: >=1.8
 
 library
-  exposed-modules:     
+  exposed-modules:
     Servant.Reflex
 
-  other-modules:       
+  other-modules:
     Servant.Common.BaseUrl
     Servant.Common.Req
 
@@ -53,4 +53,3 @@ executable example
   main-is: Example.hs
   other-modules: API
   hs-source-dirs: exec
-

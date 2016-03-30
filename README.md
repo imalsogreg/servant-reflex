@@ -50,15 +50,15 @@ type API = "getint"  :> Get '[JSON] Int
       :<|> Raw
 ```
 
-`servant-reflex` then computes functions that can query the API through an `XhrRequest`. 
+`servant-reflex` then computes functions that can query the API through an `XhrRequest`.
 
 ```haskell
 
  runGUI :: forall t m.MonadWidget t m => do
 
   -- servant-reflex computes FRP functions for each API endpoint
-  let (getint :<|> sayhi :<|> doubleit :<|> _) = client (Proxy :: Proxy API) 
-                                                        (Proxy :: Proxy m) 
+  let (getint :<|> sayhi :<|> doubleit :<|> _) = client (Proxy :: Proxy API)
+                                                        (Proxy :: Proxy m)
                                                         (constDyn defaultUrl)
 ```
 
@@ -66,10 +66,10 @@ These client functions are computed from the API and manage serialization, XhrRe
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
-   getint :: MonadWidget t m 
+   getint :: MonadWidget t m
           => Event t ()  -- ^ Trigger the XHR Request
           -> m (Event t (Maybe (Int, XhrResponse))) -- ^ Consume the answer
-   
+
    sayhi :: MonadWidget t m
          => Behavior t (Maybe String) -- ^ One input parameter - the 'name'
          -> Behavior t [String]       -- ^ Another input - list of preferred greetings
@@ -90,7 +90,7 @@ Plug any of these functions into your reactive frontend to consume backend servi
     intButton  <- button "Get Int"
     serverInts <- fmap fst <$> getint intButton
     display =<< holdDyn (Just 0) serverInts
-  
+
   elClass "div" "hello-demo" $ do
     nameText <- (current . value)               <$> textInput def
     greetings <- (fmap words . current . value) <$> textInput def
@@ -98,7 +98,7 @@ Plug any of these functions into your reactive frontend to consume backend servi
     helloButton <- button "Say hi"
     hellos <- fmap fst <$> sayhi nameText greetings withGusto helloButton
     display =<< holdDyn Nothing hellos
-    
+
   elClass "div" "demo-double" $ do
     inputDouble  <- (fmapMaybe readMaybe . current) <$> textInput def
     doubleButton <- button "Double it"
@@ -114,7 +114,7 @@ The frontend's widgets are sometimes in a state where a valid XHR request can be
 
 ## Invalid responses
 
-For convenience, successful XHR responses are decoded into a `FromHttpAPIData a => Just a`. The `XHRResponse` is also returned, which you can inspect to get more fine-grained information about the response.
+For convenience, successful XHR responses are decoded into a `MimeUnrender ct a => Just a`. The `XHRResponse` is also returned, which you can inspect to get more fine-grained information about the response.
 
 ## TODOs
 

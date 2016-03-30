@@ -169,7 +169,7 @@ performRequestNoBody reqMethod req reqHost trigger = do
   undefined
   -- return hdrs
 
-performRequestCT :: (MonadWidget t m, FromHttpApiData a, MimeUnrender ct a)
+performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
                  => Proxy ct -> String -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (Maybe a, XhrResponse))
 performRequestCT ct reqMethod req reqHost trigger = do
@@ -261,4 +261,3 @@ performRequestCT ct reqMethod req reqHost trigger = do
 --                                               | not . null . reqAccept $ req] }
 --         toProperHeader (name, val) =
 --           (fromString name, encodeUtf8 val)
-

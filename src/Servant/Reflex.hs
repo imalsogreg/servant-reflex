@@ -104,7 +104,7 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
-  (MimeUnrender ct a, FromHttpApiData a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
+  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
   ) => HasClient t m (Verb method status cts' a) where
   type Client t m (Verb method status cts' a) =
     Event t () -> m (Event t (Maybe a, XhrResponse))

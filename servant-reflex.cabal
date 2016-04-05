@@ -37,7 +37,7 @@ library
     reflex,
     reflex-dom,
     safe,
-    servant             >= 0.5  && < 0.6,
+    servant             >= 0.5  && < 0.7,
     string-conversions,
     text,
     transformers        >= 0.4  && < 0.5

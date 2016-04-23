@@ -4,7 +4,33 @@ Note: work in progress.
 
 This library lets you automatically derive [`reflex-dom`](https://github.com/reflex-frp/reflex-dom) clients that query each endpoint of a [`servant`](htps://github.com/haskell-servant/servant) webservice.
 
-## Building the example
+## Building the library and test server
+
+### With `reflex-platform`:
+
+First build the library:
+
+```
+git clone https://github.com/imalsogreg/servant-reflex
+cd servant-reflex
+git submodule update --init --recursive
+./build.sh
+./toSite.sh
+```
+
+(the `toSite.sh` script copies the generated javascript to the server's static assets directory)
+
+
+Then build the test server (not in a nix-shell):
+
+```
+./init-sandbox.sh
+cd testserver && cabal install --only-dep && cabal build && cd ..
+
+```
+
+
+### Or, with a system-wide ghcjs
 
 You will need a recent [GHCJS installation](https://github.com/ghcjs/ghcjs), or use the [reflex-platform](https://github.com/reflex-frp/reflex-platform). A [snap](https://github.com/snapframework) server using [servant-snap](https://github.com/haskell-servant/servant-snap) is provided for serving the api. `Snap 1.0` is not yet on Hackage (and servant-snap is still experimental), but we bundle the sources as a git submodule. To install everything with cabal:
 
@@ -19,21 +45,15 @@ cabal build
 ./toSite
 ```
 
-The final script copies the ghcjs-generated files into the server's static directory.
+The `toSite.hs` script copies the ghcjs-generated files into the server's static directory.
 
-To install with `reflex-platform`:
+## Running the example site
 
 ```
-git clone https://github.com/imalsogreg/servant-reflex
-cd servant-reflex
-git submodule update --init --recursive
-./init-sandbox.sh
-cd testserver && cabal install --only-dep && cabal build && cd ..
-path/to/reflex-platform/work-on ./overrides.nix ./.
-cabal build
-./toSite.sh
+testserver/dist/build/back/back
 ```
 
+And simply browse to `localhost:8000`
 
 ## Example
 

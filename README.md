@@ -49,11 +49,14 @@ The `toSite.hs` script copies the ghcjs-generated files into the server's static
 
 ## Running the example site
 
+The server must be run from the directory where static assets live:
+
 ```
-testserver/dist/build/back/back
+cd testserver
+dist/build/back/back -p 8001
 ```
 
-And simply browse to `localhost:8000`
+And simply browse to `localhost:8001`
 
 ## Example
 

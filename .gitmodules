@@ -13,3 +13,6 @@
 [submodule "deps/reflex-platform"]
 	path = deps/reflex-platform
 	url = https://github.com/reflex-frp/reflex-platform.git
+[submodule "deps/servant"]
+	path = deps/servant
+	url = https://github.com/haskell-servant/servant

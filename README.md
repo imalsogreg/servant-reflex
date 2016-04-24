@@ -91,7 +91,7 @@ These client functions are computed from the API and manage serialization, XhrRe
    -- No need to write these functions. servant-reflex creates them for you!
    getint :: MonadWidget t m
           => Event t ()  -- ^ Trigger the XHR Request
-          -> m (Event t (Maybe (Int, XhrResponse))) -- ^ Consume the answer
+          -> m (Event t (Maybe Int, XhrResponse)) -- ^ Consume the answer
 
    sayhi :: MonadWidget t m
          => Behavior t (Maybe String) -- ^ One input parameter - the 'name'

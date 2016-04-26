@@ -6,7 +6,7 @@
 {-# LANGUAGE TupleSections       #-}
 module Servant.Common.Req where
 
-import Control.Applicative (liftA2)
+import Control.Applicative (liftA2, liftA3)
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import           Data.Maybe
@@ -93,18 +93,29 @@ addHeader name val req = req { headers = headers req
 displayHttpRequest :: String -> String
 displayHttpRequest httpmethod = "HTTP " ++ httpmethod ++ " request"
 
-
-performRequest :: forall t m.MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
+-- | This function actually performs the request.
+performRequest :: forall t m.MonadWidget t m
+               => String
+               -> Req t
+               -> Dynamic t BaseUrl
                -> Event t ()
                -> m (Event t XhrResponse)
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
-performRequest reqMethod req _ trigger = do
+performRequest reqMethod req reqHost trigger = do
 
   -- Ridiculous functor-juggling! How to clean this up?
-  let t :: Behavior t [Maybe String] = sequence $ reqPathParts req
-  let urlParts :: Behavior t (Maybe [String]) = fmap sequence t
-  let urlPath :: Behavior t (Maybe String) = (fmap.fmap) (L.intercalate "/") urlParts
+  let t :: Behavior t [Maybe String]
+      t = sequence $ reqPathParts req
+
+      baseUrl :: Behavior t (Maybe String)
+      baseUrl = Just . showBaseUrl <$> current reqHost
+
+      urlParts :: Behavior t (Maybe [String])
+      urlParts = fmap sequence t
+
+      urlPath :: Behavior t (Maybe String)
+      urlPath = (fmap.fmap) (L.intercalate "/") urlParts
 
       queryPartString :: (String, QueryPart t) -> Behavior t (Maybe String)
       queryPartString (pName, qp) = case qp of
@@ -116,11 +127,16 @@ performRequest reqMethod req _ trigger = do
           True ->  Just pName
           False -> Nothing
 
+
       queryPartStrings = map queryPartString (qParams req)
       queryPartStrings' = sequence queryPartStrings :: Behavior t [Maybe String]
       queryString :: Behavior t (Maybe String) =
         ffor queryPartStrings' $ \qs -> Just (L.intercalate "&" (catMaybes qs))
-      xhrUrl =  (liftA2 . liftA2) (\p q -> if null q then p else p ++ '?' : q) urlPath queryString
+      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </>  if null q then p else p ++ '?' : q) baseUrl urlPath queryString
+        where
+          (</>) :: String -> String -> String
+          x </> y | ("/" `L.isSuffixOf` x) || ("/" `L.isPrefixOf` y) = x ++ y
+                  | otherwise = x ++ '/':y
 
       xhrHeaders :: Behavior t [(String, String)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal

@@ -409,11 +409,11 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy api) q req baseurl
 
-instance HasClient t m subapi =>
-  HasClient t m (WithNamedContext name config subapi) where
+-- instance HasClient t m subapi =>
+--   HasClient t m (WithNamedConfig name config subapi) where
 
-  type Client t m (WithNamedContext name config subapi) = Client t m subapi
-  clientWithRoute Proxy q = clientWithRoute (Proxy :: Proxy subapi) q
+--   type Client t m (WithNamedConfig name config subapi) = Client t m subapi
+--   clientWithRoute Proxy q = clientWithRoute (Proxy :: Proxy subapi) q
 
 
 {- Note [Non-Empty Content Types]

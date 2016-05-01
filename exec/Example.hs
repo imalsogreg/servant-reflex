@@ -15,9 +15,6 @@ import Reflex.Dom
 api :: Proxy API
 api = Proxy
 
-url :: BaseUrl
-url = BaseUrl Http "localhost" 8000 ""
-
 main :: IO ()
 main = mainWidget run
 
@@ -25,9 +22,14 @@ main = mainWidget run
 run :: forall t m. MonadWidget t m => m ()
 run = do
 
+  url <- baseUrlWidget
+  el "br" (return ())
+  dynText =<< mapDyn showBaseUrl url
+  el "br" (return ())
+
   -- Name the computed API client functions
   let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> doRaw) =
-        client api (Proxy :: Proxy m) (constDyn url)
+        client api (Proxy :: Proxy m) url
 
   elClass "div" "demo-group" $ do
     unitBtn  <- button "Get unit"

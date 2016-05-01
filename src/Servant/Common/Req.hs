@@ -37,6 +37,10 @@ import Reflex.Dom
 
 import Web.HttpApiData
 
+data ReqResult e a = ResponseSuccess a XhrResponse
+                   | ResponseFailure String XhrResponse
+                   | RequestFailure e
+
 -- data ServantError
 --   = FailureResponse
 --     { responseStatus            :: Status
@@ -187,16 +191,18 @@ performRequestNoBody reqMethod req reqHost trigger = do
 
 performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
                  => Proxy ct -> String -> Req t -> Dynamic t BaseUrl
-                 -> Event t () -> m (Event t (Maybe a, XhrResponse))
+                 -> Event t () -> m (Event t (ReqResult e a))
 performRequestCT ct reqMethod req reqHost trigger = do
   resp <- performRequest reqMethod req reqHost trigger
-  return $ ffor resp $ \xhr ->
-    (hushed (mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
-     =<< _xhrResponse_responseText xhr, xhr)
-  where hushed :: (x -> Either e y) -> x -> Maybe y
-        hushed f ea = case f ea of
-          Left  _ -> Nothing
-          Right a -> Just a
+  let decodes = ffor resp $ \xhr ->
+        ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
+         =<< note "No body text" (_xhrResponse_responseText xhr), xhr)
+  return $ ffor decodes $ \case
+    (Right a, resp) -> ResponseSuccess a resp
+    (Left e,  resp) -> ResponseFailure e resp
+
+note :: e -> Maybe a -> Either e a
+note e = maybe (Left e) Right
 
 
   -- partialRequest <- liftIO $ reqToRequest req reqHost

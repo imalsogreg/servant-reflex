@@ -82,7 +82,7 @@ type API = "getint"  :> Get '[JSON] Int
   -- servant-reflex computes FRP functions for each API endpoint
   let (getint :<|> sayhi :<|> doubleit :<|> _) = client (Proxy :: Proxy API)
                                                         (Proxy :: Proxy m)
-                                                        (constDyn defaultUrl)
+                                                        (constDyn (BasePath "/"))
 ```
 
 These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Maybe a)` values. You provide a trigger event and receive an `Event t (Maybe r, XhrResponse)`, with responses from the API server (which you would write with `servant-server`).

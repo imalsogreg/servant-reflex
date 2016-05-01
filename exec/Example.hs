@@ -22,6 +22,8 @@ main = mainWidget run
 run :: forall t m. MonadWidget t m => m ()
 run = do
 
+  -- Allow user to choose the url target for the request
+  -- (alternatively we could just `let url = constDyn (BasePath "/")`)
   url <- baseUrlWidget
   el "br" (return ())
   dynText =<< mapDyn showBaseUrl url

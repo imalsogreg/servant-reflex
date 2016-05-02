@@ -38,13 +38,13 @@ run = do
     intBtn   <- button "Get int"
 
     unitResponse <- getUnit unitBtn
-    intResponse :: Event t (Maybe Int, XhrResponse) <- getInt intBtn
+    intResponse :: Event t (ReqResult Int) <- getInt intBtn
 
-    score <- foldDyn (+) 0 (fmapMaybe fst intResponse)
+    score <- foldDyn (+) 0 (fmapMaybe reqSuccess intResponse)
 
-    r <- holdDyn "Waiting" $
-         leftmost [fmap (showXhrResponse . snd) unitResponse
-                  ,fmap (showXhrResponse . snd) intResponse
+    r <- holdDyn "Waiting" $ fmap showXhrResponse $
+         leftmost [fmapMaybe response unitResponse
+                  ,fmapMaybe response intResponse
                   ]
     dynText r >> el "br" (return ()) >> text "Total: " >> display score
 
@@ -53,7 +53,7 @@ run = do
     text "Name"
     el "br" $ return ()
     inp :: Dynamic t String <- fmap value (textInput def)
-    let checkedName = fmap (\i -> bool (Just i) Nothing (null i)) (current inp)
+    let checkedName = fmap (\i -> bool (Right i) (Left "Need a name") (null i)) (current inp)
     el "br" $ return ()
 
     text "Greetings (space-separated)"
@@ -67,16 +67,18 @@ run = do
     el "br" $ return ()
     sayhiClicks :: Event t () <- button "Say hi"
 
-    resp <- fmap fst <$> sayhi checkedName greetings (current gusto) sayhiClicks
-    dynText =<< holdDyn "No hi yet" (fmapMaybe id resp)
+    resp <- sayhi checkedName greetings (current gusto) sayhiClicks
+    dynText =<< holdDyn "No hi yet" (leftmost [fmapMaybe reqSuccess resp, fmapMaybe reqFailure resp])
 
   elClass "div" "demo-group" $ do
     text "A Double to double"
     el "br" $ return ()
     dblinp <- value <$> textInput def
     dblBtn <- button "Double it"
-    dblResp :: Event t (Maybe Double) <- fmap fst <$> dbl (fmap readMaybe $ current dblinp) dblBtn
-    display =<< holdDyn "No number yet" (fmap show $ fmapMaybe id dblResp)
+    dblResp <- dbl (fmap (note "read failure" . readMaybe) $ current dblinp) dblBtn
+    dynText =<< holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
+    el "br" (return ())
+    display =<< holdDyn "No number yet" (fmap show $ fmapMaybe reqSuccess dblResp)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

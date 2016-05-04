@@ -85,60 +85,78 @@ type API = "getint"  :> Get '[JSON] Int
                                                         (constDyn (BasePath "/"))
 ```
 
-These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Maybe a)` values. You provide a trigger event and receive an `Event t (Maybe r, XhrResponse)`, with responses from the API server (which you would write with `servant-server`).
+These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Either String a)` values. You provide a trigger event and receive an `Event t (ReqResult a)`, with responses from the API server (which you would write with `servant-server`).
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
    getint :: MonadWidget t m
           => Event t ()  -- ^ Trigger the XHR Request
-          -> m (Event t (Maybe Int, XhrResponse)) -- ^ Consume the answer
+          -> m (Event t (ReqResult Int)) -- ^ Consume the answer
 
    sayhi :: MonadWidget t m
-         => Behavior t (Maybe String) -- ^ One input parameter - the 'name'
-         -> Behavior t [String]       -- ^ Another input - list of preferred greetings
-         -> Behavior t Bool           -- ^ Flag for capitalizing the response
-         -> Event t ()                -- ^ Trigger the XHR Request
-         -> m (Event t (Maybe String, XhrResponse))
+         => Behavior t (Either String String) 
+            -- ^ One input parameter - the 'name'
+         -> Behavior t [String]
+            -- ^ Another input: list of preferred greetings
+         -> Behavior t Bool
+            -- ^ Flag for capitalizing the response
+         -> Event t ()
+            -- ^ Trigger the XHR Request
+         -> m (Event t (ReqResult String))
 
    doubleit :: MonadWidget t m
-            => Behavior t (Maybe Double)
+            => Behavior t (Either String Double)
             -> Event t ()
-            -> m (Event t (Maybe Double, XhrResponse))
+            -> m (Event t (ReqResult Double))
 ```
 
-Plug any of these functions into your reactive frontend to consume backend services without having to build XhrRequests by hand.
+Plug any of these functions into your reflex frontend to consume backend servant services. *Isomorphic!*
+
+`ReqResult a` is defined in [`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42) and reports whether or not your request was sent (if validation fails, the request won't be sent), and how decoding of the response went. You can pattern match on these explicitly, but usually you'll want to use `fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the elimination functions to filter the result type you care about, like this:
+
+```haskell
+  -- ... continued ...
+  res :: Event t (ReqResult Double) <- doubleIt xs triggers
+  let ys   = fmapMaybe reqSuccess res
+      errs = fmapMaybe reqFailure res
+  
+  -- Green <p> tag showing the last good result 
+  elAttr "p" ("style" =: "color:green") $ do
+    text "Last good result: "
+    dynText =<< holdDyn "" (fmap show ys)
+    
+  -- Red <p> tag showing the last error, cleared by a new good value
+  elAttr "p" ("style" =: "color:red") $
+    dynText =<< holdDyn "" (leftmost [errs, const "" <$> ys])
+```
+
+This example builds some input fields to enter API parameters, buttons to trigger the API calls, and text elements to show the results:
 
 ```haskell
   elClass "div" "int-demo" $ do
     intButton  <- button "Get Int"
-    serverInts <- fmap fst <$> getint intButton
+    serverInts <- fmapMaybe resSuccess <$> getint intButton
     display =<< holdDyn (Just 0) serverInts
 
   elClass "div" "hello-demo" $ do
-    nameText <- (current . value)               <$> textInput def
+    nameText <- (current . value) <$> textInput def
     greetings <- (fmap words . current . value) <$> textInput def
     withGusto <- checkbox def
     helloButton <- button "Say hi"
-    hellos <- fmap fst <$> sayhi nameText greetings withGusto helloButton
+    hellos <- fmapMaybe resResult <$> sayhi nameText greetings withGusto helloButton
     display =<< holdDyn Nothing hellos
 
   elClass "div" "demo-double" $ do
     inputDouble  <- (fmapMaybe readMaybe . current) <$> textInput def
     doubleButton <- button "Double it"
-    outputDouble <- fmap fst <$> doubleit inputDouble doubleButton
+    outputDouble <- fmapMaybe resSuccess <$> doubleit inputDouble doubleButton
     display =<< holdDyn Nothing outputDouble
 ```
 
-For a great introduction to recative DOM building, see the [README](https://github.com/reflex-frp/reflex-platform) for the `reflex-platform`.
-
-## Input validation
-
-The frontend's widgets are sometimes in a state where a valid XHR request can be generated, and sometimes not. When all of the input parameters (`Behavior t (Maybe a)`) are `Just _`, the trigger event will communicate with the server. When any of the inputs is `Nothing`, no XHR request will be made (the event will be silently dropped). In the future input parameters will be encoded as `Behavior t (Either e a)`, and triggers that occur when a Request can't be generated will immediately return a `Left e`, which you could use to draw an error in the page.
-
-## Invalid responses
-
-For convenience, successful XHR responses are decoded into a `MimeUnrender ct a => Just a`. The `XHRResponse` is also returned, which you can inspect to get more fine-grained information about the response.
+For a great introduction to recative DOM building, see the [README](https://github.com/reflex-frp/reflex-platform) for the `reflex-platform`. For more information about servant, see their [documentation](http://haskell-servant.readthedocs.io/en/stable/). Thanks to the respective authors of these fabulous libraries.
 
 ## TODOs
 
-We're still working on thi
+ - Request Headers
+ - Tests
+ - Code cleanup

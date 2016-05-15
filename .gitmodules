@@ -1,6 +1,6 @@
 [submodule "deps/reflex-dom-contrib"]
 	path = deps/reflex-dom-contrib
-	url = https://reflex-frp/reflex-dom-contrib
+	url = https://github.com/reflex-frp/reflex-dom-contrib
 [submodule "deps/servant-snap"]
 	path = deps/servant-snap
 	url = https://github.com/haskell-servant/servant-snap

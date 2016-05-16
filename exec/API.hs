@@ -14,6 +14,7 @@ type API = "getunit" :> Get '[JSON] ()
                      :> Get '[JSON] String
       :<|> "double" :> ReqBody '[JSON] Double
                     :> Post '[JSON] Double
+      :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] String
       :<|> Raw
 
 type GET = Get '[JSON] ()

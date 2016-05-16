@@ -44,7 +44,7 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> serveDirectory "static"
+server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDirectory "static"
   where sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: String)
           Just n  -> do
@@ -56,6 +56,7 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> serveDirectory "stat
                                        ++ ", and " ++ L.last greetings ++ ", "
            return . modifier $ greetPart ++ n
         dbl x = return $ x * 2
+        multi = return . bool "Box unchecked" "Box Checked"
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.

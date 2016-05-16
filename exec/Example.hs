@@ -30,7 +30,7 @@ run = do
   el "br" (return ())
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> doRaw) =
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> doRaw) =
         client api (Proxy :: Proxy m) url
 
   elClass "div" "demo-group" $ do
@@ -79,6 +79,13 @@ run = do
     dynText =<< holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
     el "br" (return ())
     display =<< holdDyn "No number yet" (fmap show $ fmapMaybe reqSuccess dblResp)
+
+  elClass "div" "demo-group" $ do
+    text "Multi-part path"
+    b <- (current . value) <$> checkbox False def
+    mpGo <- button "Test"
+    multiResp <- multi b mpGo
+    dynText =<< holdDyn "No res yet" (fmap show $ fmapMaybe reqSuccess $ multiResp)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

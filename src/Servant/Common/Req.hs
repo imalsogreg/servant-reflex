@@ -99,7 +99,7 @@ performRequest reqMethod req reqHost trigger = do
 
   -- Ridiculous functor-juggling! How to clean this up?
   let t :: Behavior t [Either String String]
-      t = sequence $ reqPathParts req
+      t = sequence $ L.reverse $ reqPathParts req
 
       baseUrl :: Behavior t (Either String String)
       baseUrl = Right . showBaseUrl <$> current reqHost

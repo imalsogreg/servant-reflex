@@ -60,12 +60,12 @@ showBaseUrl (BaseFullUrl urlscheme host port path) =
 
 baseUrlWidget :: forall t m .MonadWidget t m => m (Dynamic t BaseUrl)
 baseUrlWidget = elClass "div" "base-url" $ do
-  urlWidget <- dropdown (0 :: Int) (constDyn $ 0 =: "BaseUrlFull" <> 1 =: "BasePath") def
+  urlWidget <- dropdown (0 :: Int) (constDyn $ 0 =: "BasePath" <> 1 =: "BaseUrlFull") def
   bUrlWidget <- forDyn (value urlWidget) $ \i -> case i of
-    0 -> fullUrlWidget
-    1 -> pathWidget
+    0 -> pathWidget
+    1 -> fullUrlWidget
     _ -> error "Surprising value"
-  joinDyn <$> widgetHold fullUrlWidget (updated bUrlWidget)
+  joinDyn <$> widgetHold pathWidget (updated bUrlWidget)
   where pathWidget :: m (Dynamic t BaseUrl)
         pathWidget = do
           text "Url base path"

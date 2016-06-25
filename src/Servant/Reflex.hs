@@ -427,6 +427,17 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy api) q req baseurl
 
+instance (HasClient t m api, Reflex t)
+      => HasClient t m (BasicAuth realm usr :> api) where
+
+  type Client t m (BasicAuth realm usr :> api) = Behavior t (Maybe BasicAuthData)
+                                               -> Client t m api
+
+  clientWithRoute Proxy q req baseurl authdata =
+    clientWithRoute (Proxy :: Proxy api) q req' baseurl
+      where
+        req'    = req { authData = Just authdata }
+
 -- instance HasClient t m subapi =>
 --   HasClient t m (WithNamedConfig name config subapi) where
 

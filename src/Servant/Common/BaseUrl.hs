@@ -80,9 +80,9 @@ baseUrlWidget = elClass "div" "base-url" $ do
           prt  <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "80"}
           port :: Dynamic t Int <- holdDyn 80 (fmapMaybe readMaybe $ updated (value prt))
           path <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "a/b" }
-          BaseFullUrl `mapDyn` value schm `apDyn` value srv `apDyn` port `apDyn` value path
+          BaseFullUrl `mapDyn` value schm `myApDyn` value srv `myApDyn` port `myApDyn` value path
 
-apDyn :: MonadWidget t m => m (Dynamic t (a -> b)) -> Dynamic t a -> m (Dynamic t b)
-apDyn f' a = do
+myApDyn :: MonadWidget t m => m (Dynamic t (a -> b)) -> Dynamic t a -> m (Dynamic t b)
+myApDyn f' a = do
   f <- f'
   combineDyn ($) f a

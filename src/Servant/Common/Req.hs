@@ -44,6 +44,11 @@ data ReqResult a = ResponseSuccess a XhrResponse
                  | ResponseFailure String XhrResponse
                  | RequestFailure String
 
+instance Functor ReqResult where
+  fmap f (ResponseSuccess a xhr) = ResponseSuccess (f a) xhr
+  fmap _ (ResponseFailure s x)   = ResponseFailure s x
+  fmap _ (RequestFailure s)      = RequestFailure s
+
 reqSuccess :: ReqResult a -> Maybe a
 reqSuccess (ResponseSuccess x _) = Just x
 reqSuccess _                     = Nothing

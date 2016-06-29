@@ -1,5 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
@@ -30,7 +32,7 @@ run = do
   el "br" (return ())
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> doRaw) =
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> hdr :<|> doRaw) =
         client api (Proxy :: Proxy m) url
 
   elClass "div" "demo-group" $ do
@@ -86,6 +88,15 @@ run = do
     mpGo <- button "Test"
     multiResp <- multi b mpGo
     dynText =<< holdDyn "No res yet" (fmap show $ fmapMaybe reqSuccess $ multiResp)
+
+  elClass "div" "demo-group" $ do
+    text "Header test"
+    hdGo <- button "Header"
+    hdResp <- hdr hdGo
+    dynText =<< holdDyn "No res yet" (fmap (show . getHeaders . getHeadersHList) $ fmapMaybe reqSuccess $ hdResp)
+
+-- showHeader :: (GetHeaders (ls :: *)) => Headers ls a -> String
+-- showHeader hs = show (getHeaders $ getHeadersHList hs)
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

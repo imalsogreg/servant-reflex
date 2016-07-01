@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.1
+Version: 0.2
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: AllRightsReserved
@@ -48,7 +48,7 @@ library
   default-language: Haskell2010
 
 executable example
-  build-depends: reflex, servant-reflex, base, scientific, servant, reflex-dom
+  build-depends: reflex, servant-reflex, base, ghcjs-base, scientific, servant, reflex-dom, transformers
   default-language: Haskell2010
   main-is: Example.hs
   other-modules: API

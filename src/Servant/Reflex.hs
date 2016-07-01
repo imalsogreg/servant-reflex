@@ -23,6 +23,7 @@ module Servant.Reflex
   , module Servant.Common.BaseUrl
   ) where
 
+import           Control.Arrow              (first, second)
 import           Control.Applicative        ((<$>), liftA2)
 import           Control.Monad.IO.Class     (liftIO)
 import           Control.Monad.Trans.Except
@@ -35,6 +36,7 @@ import           Data.String.Conversions
 import           Data.Maybe                 (maybeToList)
 import           Data.Text                  (unpack)
 import           Data.Traversable           (sequenceA)
+import qualified Data.JSString              as JS
 import           GHC.TypeLits
 import qualified Network.HTTP.Media         as M
 import           Servant.API
@@ -42,8 +44,9 @@ import           Servant.Common.BaseUrl
 import           Servant.Common.Req
 import           Servant.API.ContentTypes
 import           Reflex
-import           Reflex.Dom
-import           Reflex.Dom.Xhr
+import           Reflex.Dom hiding (XhrRequuest(..))
+-- import           Reflex.Dom.Xhr
+import qualified JavaScript.Web.XMLHttpRequest as Xhr
 
 -- * Accessing APIs as a Client
 
@@ -107,9 +110,18 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
 toHeaders :: BuildHeadersTo ls => ReqResult a -> IO (ReqResult (Headers ls a))
 toHeaders r = do
   -- TODO: This is where we would extract the response headers
-  hdrs <- maybe (return []) (\xhr -> return []) (response r)
+  hdrs <- maybe (return []) (\xhr -> getHeaderList xhr) (response r)
+  print hdrs
   return $ ffor r $ \a -> Headers {getResponse = a
                                   ,getHeadersHList = buildHeadersTo hdrs}
+
+
+getHeaderList :: Xhr.Response a -> IO [(CI.CI BS.ByteString,BS.ByteString)]
+getHeaderList r = do
+  s <- JS.unpack <$> Xhr.getAllResponseHeaders r
+  print s
+  -- TODO provisional thing for figuring out how to extract response headers. Totally unsafe hack
+  return $ map (first (CI.mk . BS.pack) . second (\x -> BS.pack . drop 2 . take (length x - 1) $ x) . break (== ':')) (lines s)
 
 
 -- VERB (Returning content) --
@@ -353,23 +365,23 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
 -- back the full `Response`.
 -- TODO redo
 instance (MonadWidget t m) => HasClient t m Raw where
-  type Client t m Raw = Behavior t (Either String XhrRequest)
+  type Client t m Raw = Behavior t (Either String Xhr.Request)
                       -> Event t ()
                       -> m (Event t (ReqResult ()))
 
-  -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> BaseUrl -> Client t m Raw
+  -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> Dynamic t BaseUrl -> Client t m Raw
   clientWithRoute p q req baseurl xhrs triggers = do
     let xhrs'  = liftA2 (\x path -> case x of
                     Left e  -> Left e
-                    Right jx -> Right $ jx {_xhrRequest_url = path
-                                            ++ _xhrRequest_url jx})
+                    Right jx -> Right (jx { Xhr.reqURI = JS.pack (JS.unpack (Xhr.reqURI jx) </> path) }))-- TODO
                  xhrs
                  (showBaseUrl <$> current baseurl)
         reqs   = tag xhrs' triggers
         okReq  = fmapMaybe hush reqs
         badReq = fmapMaybe tattle reqs
-    resps <- performRequestAsync okReq
-    return $ leftmost [fmap (ResponseSuccess () ) resps
+    -- resps <- performRequestAsync okReq
+    resps <- performEvent $ fmap (liftIO . Xhr.xhrString) okReq
+    return $ leftmost [fmap (\resp -> ResponseSuccess () resp) resps
                       ,fmap RequestFailure badReq]
 
 
@@ -447,7 +459,7 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
 instance (HasClient t m api, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) where
 
-  type Client t m (BasicAuth realm usr :> api) = Behavior t (Maybe BasicAuthData)
+  type Client t m (BasicAuth realm usr :> api) = Behavior t (Either String BasicAuthData)
                                                -> Client t m api
 
   clientWithRoute Proxy q req baseurl authdata =

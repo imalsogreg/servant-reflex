@@ -5,7 +5,10 @@
 
 module Main where
 
+import Control.Monad ((<=<))
+import Control.Monad.IO.Class (liftIO)
 import Data.Bool
+import qualified Data.JSString as JS
 import Data.Maybe
 import Servant.API
 import Servant.Reflex
@@ -13,6 +16,7 @@ import API
 import Data.Proxy
 import Text.Read (readMaybe)
 import Reflex.Dom
+import qualified JavaScript.Web.XMLHttpRequest as Xhr
 
 api :: Proxy API
 api = Proxy
@@ -44,10 +48,10 @@ run = do
 
     score <- foldDyn (+) 0 (fmapMaybe reqSuccess intResponse)
 
-    r <- holdDyn "Waiting" $ fmap showXhrResponse $
-         leftmost [fmapMaybe response unitResponse
-                  ,fmapMaybe response intResponse
-                  ]
+    r <- holdDyn "Waiting" =<< performEvent (fmap (liftIO . getResponseString) $
+                                             leftmost [fmapMaybe response unitResponse
+                                                      ,fmapMaybe response intResponse
+                                                      ])
     dynText r >> el "br" (return ()) >> text "Total: " >> display score
 
   elClass "div" "demo-group" $ do
@@ -95,8 +99,11 @@ run = do
     hdResp <- hdr hdGo
     dynText =<< holdDyn "No res yet" (fmap (show . getHeaders . getHeadersHList) $ fmapMaybe reqSuccess $ hdResp)
 
--- showHeader :: (GetHeaders (ls :: *)) => Headers ls a -> String
--- showHeader hs = show (getHeaders $ getHeadersHList hs)
+
+getResponseString :: Show a => Xhr.Response a -> IO String
+getResponseString (Xhr.Response c s getHeaders _) = do
+  hs <- getHeaders
+  return $ unlines ["Response:" ,show c ,show s ,JS.unpack hs]
 
 showXhrResponse :: XhrResponse -> String
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =

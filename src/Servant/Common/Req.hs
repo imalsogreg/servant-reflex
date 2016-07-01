@@ -6,14 +6,20 @@
 {-# LANGUAGE TupleSections       #-}
 module Servant.Common.Req where
 
+import Data.Bifunctor (bimap)
+import Control.Arrow (first, second)
 import Control.Applicative (liftA2, liftA3)
+import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
 import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.Char          (toUpper)
 import           Data.Maybe
+import qualified Data.Text          as T
 import qualified Data.Text.Encoding as TE
 -- import qualified Data.Foldable as F
 import qualified Data.List as L
 import Data.Proxy
+import qualified Data.JSString as JS
 import qualified Data.Map as Map
 -- import Data.Monoid
 -- import Data.String
@@ -31,7 +37,8 @@ import qualified Data.Map as Map
 import Servant.Common.BaseUrl
 import Servant.API.ContentTypes
 import Reflex
-import Reflex.Dom
+import Reflex.Dom hiding (XhrResponse, XhrRequest, performRequestAsync)
+import qualified JavaScript.Web.XMLHttpRequest as Xhr
 
 import Servant.API.BasicAuth
 import qualified Data.ByteString.Char8 as BS
@@ -40,9 +47,9 @@ import qualified Data.ByteString.Char8 as BS
 
 import Web.HttpApiData
 
-data ReqResult a = ResponseSuccess a XhrResponse
-                 | ResponseFailure String XhrResponse
-                 | RequestFailure String
+data ReqResult a = ResponseSuccess a      (Xhr.Response String)
+                 | ResponseFailure String (Xhr.Response String)
+                 | RequestFailure  String
 
 instance Functor ReqResult where
   fmap f (ResponseSuccess a xhr) = ResponseSuccess (f a) xhr
@@ -58,7 +65,7 @@ reqFailure (ResponseFailure s _) = Just s
 reqFailure (RequestFailure s)    = Just s
 reqFailure _                     = Nothing
 
-response :: ReqResult a -> Maybe XhrResponse
+response :: ReqResult a -> Maybe (Xhr.Response String)
 response (ResponseSuccess _ x) = Just x
 response (ResponseFailure _ x) = Just x
 response _                     = Nothing
@@ -74,7 +81,7 @@ data Req t = Req
   , reqBody      :: Maybe (Behavior t (Either String (BL.ByteString, String)))
   -- , reqAccept    :: [MediaType]  -- TODO ?
   , headers      :: [(String, Behavior t String)]
-  , authData     :: Maybe (Behavior t (Maybe BasicAuthData))
+  , authData     :: Maybe (Behavior t (Either String BasicAuthData))
   }
 
 defReq :: Reflex t => Req t
@@ -101,7 +108,7 @@ performRequest :: forall t m.MonadWidget t m
                -> Req t
                -> Dynamic t BaseUrl
                -> Event t ()
-               -> m (Event t XhrResponse, Event t String)
+               -> m (Event t (Xhr.Response String), Event t String)
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
 performRequest reqMethod req reqHost trigger = do
@@ -138,69 +145,68 @@ performRequest reqMethod req reqHost trigger = do
       queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Behavior t (Either String [String])
       queryString :: Behavior t (Either String String) =
         ffor queryPartStrings' $ \qs -> fmap (L.intercalate "&") qs
---        ffor queryPartStrings' $ \qs -> fmap (L.intercalate "&") (sequence qs)
       xhrUrl =  (liftA3 . liftA3) (\a p q -> a </>  if null q then p else p ++ '?' : q) baseUrl urlPath queryString
-        where
-          (</>) :: String -> String -> String
-          x </> y | ("/" `L.isSuffixOf` x) || ("/" `L.isPrefixOf` y) = x ++ y
-                  | otherwise = x ++ '/':y
 
       xhrHeaders :: Behavior t [(String, String)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
-      mkConfigBody :: [(String,String)] -> (Either String (BL.ByteString, String)) -> Either String XhrRequestConfig
-      mkConfigBody hs rb = case rb of
-                  Left e               -> Left e
-                  (Right (bBytes, bCT)) ->
-                    Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
-                                , _xhrRequestConfig_headers  =
-                                    Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
+      setHeaders :: [(String, String)] -> Either String Xhr.Request -> Either String Xhr.Request
+      setHeaders hs req = ffor req $ \r -> r { Xhr.reqHeaders = map (bimap JS.pack JS.pack) hs }
 
-      xhrOpts :: Behavior t (Either String XhrRequestConfig)
-      xhrOpts = case reqBody req of
-        Nothing    -> fmap (\h -> Right $ def { _xhrRequestConfig_headers = Map.fromList h }) xhrHeaders
-        Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
+      setUrl :: Either String String -> Either String Xhr.Request -> Either String Xhr.Request
+      setUrl = liftA2 (\uri r -> r { Xhr.reqURI = JS.pack uri})
 
-      mkAuth :: Maybe BasicAuthData -> Either String XhrRequestConfig -> Either String XhrRequestConfig
-      mkAuth _ (Left e) = Left e
-      mkAuth Nothing r  = r
-      mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
-        { _xhrRequestConfig_user     = Just $ BS.unpack u
-        , _xhrRequestConfig_password = Just $ BS.unpack p}
+      setRequestBody :: Either String (Maybe (BL.ByteString, String))
+                     -> Either String Xhr.Request
+                     -> Either String Xhr.Request
+      setRequestBody reqBod req = liftA2 aux req reqBod
+        where aux :: Xhr.Request -> Maybe (BL.ByteString, String) -> Xhr.Request
+              aux req' Nothing = req'
+              aux req' (Just (bBytes, bContentType)) =
+                req' { Xhr.reqHeaders =
+                         L.insert ("Content-Type", JS.pack bContentType)
+                         (Xhr.reqHeaders req')
+                     , Xhr.reqData = Xhr.StringData (JS.pack $ BL.unpack bBytes)
+                     }
 
-      addAuth :: Behavior t (Either String XhrRequestConfig) -> Behavior t (Either String XhrRequestConfig)
-      addAuth xhr = case authData req of
-        Nothing -> xhr
-        Just auth -> liftA2 mkAuth auth xhr
+      setAuth :: Either String (Maybe BasicAuthData) -> Either String Xhr.Request -> Either String Xhr.Request
+      setAuth = liftA2 aux
+        where aux au req =
+                req { Xhr.reqLogin = fmap (\(BasicAuthData u p) ->
+                                            (JS.pack $ BS.unpack u, JS.pack $ BS.unpack p)) au}
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMethod p opt) xhrUrl (addAuth xhrOpts)
+  let req0 = Right $ Xhr.Request (readMethod reqMethod) (error "URI should have been set") Nothing [] False Xhr.NoData
+      xhrReq = liftA5 (\url hs base auth bod -> (setUrl url  .
+                                             setAuth auth .
+                                             setRequestBody bod .
+                                             setHeaders hs) req0)
+
+        xhrUrl xhrHeaders (current reqHost) (maybe (constant (Right Nothing)) (fmap . fmap $ Just) (authData req))
+                                            (maybe (constant (Right Nothing)) (fmap . fmap $ Just) (reqBody req))
 
   let reqs    = tag xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 
-  resps <- performRequestAsync okReqs
+  resps <- performEvent (fmap (liftIO . Xhr.xhrString) okReqs)
   return (resps, badReqs)
 
-  -- let oneNamedPair :: String -> [QueryPart] -> String
-  --     oneNamedPair pName ps =
-  --       L.intercalate "&" $ ffor ps $ \case
-  --         QueryPartParam pval -> pName ++ "=" ++ pval
-  --         QueryPartFlag True  -> pName
-  --         QueryPartFlag False -> error "Impossible case"
 
-  --     t' :: [Behavior t String]
-  --     t' = map (\(pName, pVals) -> fmap (oneNamedPair pName) pVals)
-  --           (qParams req)
+liftA5 :: Applicative f => (a -> b -> c -> d -> e -> g) -> f a -> f b -> f c -> f d -> f e -> f g
+liftA5 f a b c d e = f <$> a <*> b <*> c <*> d <*> e
 
-  --     queryString :: Behavior t String
-  --     queryString = fmap (L.intercalate "&") (sequence t')
+readMethod :: String -> Xhr.Method
+readMethod s = case map toUpper s of
+  "GET"    -> Xhr.GET
+  "POST"   -> Xhr.POST
+  "PUT"    -> Xhr.PUT
+  "DELETE" -> Xhr.DELETE
+  _        -> error $ "Invalid method: " ++ s
 
-  --     xhrUrl = (liftA2 . liftA2) (\u q -> u ++ '?' : q) urlPath (fmap Just queryString)
+(</>) :: String -> String -> String
+x </> y | ("/" `L.isSuffixOf` x) || ("/" `L.isPrefixOf` y) = x ++ y
+        | otherwise = x ++ '/':y
 
--- TODO implement
--- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
-  -- TODO Proxy probably not needed
 performRequestNoBody ::
   forall t m .MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
 --                               -> Event t () -> m (Event t (Maybe NoContent, XhrResponse))
@@ -208,7 +214,6 @@ performRequestNoBody ::
 performRequestNoBody reqMethod req reqHost trigger = do
   -- performRequest reqMethod req reqHost trigger
   undefined
-  -- return hdrs
 
 performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
                  => Proxy ct -> String -> Req t -> Dynamic t BaseUrl
@@ -217,7 +222,7 @@ performRequestCT ct reqMethod req reqHost trigger = do
   (resp, badReq) <- performRequest reqMethod req reqHost trigger
   let decodes = ffor resp $ \xhr ->
         ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
-         =<< note "No body text" (_xhrResponse_responseText xhr), xhr)
+         =<< note "No body text" (T.pack <$> Xhr.contents xhr), xhr)
       reqs = ffor decodes $ \case
         (Right a, resp) -> ResponseSuccess a resp
         (Left e,  resp) -> ResponseFailure e resp

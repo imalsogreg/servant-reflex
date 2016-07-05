@@ -1,5 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,15 +15,12 @@ module Servant.Common.BaseUrl (
   , showBaseUrl
 ) where
 
-import           Control.Monad.Catch (Exception, MonadThrow, throwM)
-import           Data.List
 import           Data.Monoid
-import           Data.Typeable
+import           Data.Text (Text)
+import qualified Data.Text as T
 import           GHC.Generics
-import           Network.URI hiding (path)
 import           Reflex
 import           Reflex.Dom
-import           Safe
 import           Text.Read
 
 -- | URI scheme to use
@@ -31,8 +31,8 @@ data Scheme =
 
 -- | Simple data type to represent the target of HTTP requests
 --   for servant's automatically-generated clients.
-data BaseUrl = BaseFullUrl Scheme String Int String
-             | BasePath String
+data BaseUrl = BaseFullUrl Scheme Text Int Text
+             | BasePath Text
   deriving (Ord, Read, Show, Generic)
 
 
@@ -40,23 +40,22 @@ instance Eq BaseUrl where
     BasePath s == BasePath s' = s == s'
     BaseFullUrl a b c path == BaseFullUrl a' b' c' path'
         = a == a' && b == b' && c == c' && s path == s path'
-        where s ('/':x) = x
-              s x       = x
+        where s x = if T.isPrefixOf "/" x then T.tail x else x
     _ == _ = False
 
-showBaseUrl :: BaseUrl -> String
+showBaseUrl :: BaseUrl -> Text
 showBaseUrl (BasePath s) = s
 showBaseUrl (BaseFullUrl urlscheme host port path) =
-  schemeString ++ "//" ++ host ++ (portString </> path)
+  schemeString <> "//" <> host <> (portString </> path)
     where
-      a </> b = if "/" `isPrefixOf` b || null b then a ++ b else a ++ '/':b
+      a </> b = if "/" `T.isPrefixOf` b || T.null b then a <> b else a <> "/" <> b
       schemeString = case urlscheme of
         Http  -> "http:"
         Https -> "https:"
       portString = case (urlscheme, port) of
         (Http, 80) -> ""
         (Https, 443) -> ""
-        _ -> ":" ++ show port
+        _ -> ":" <> T.pack (show port)
 
 baseUrlWidget :: forall t m .MonadWidget t m => m (Dynamic t BaseUrl)
 baseUrlWidget = elClass "div" "base-url" $ do
@@ -78,7 +77,7 @@ baseUrlWidget = elClass "div" "base-url" $ do
           srv  <- textInput def {_textInputConfig_attributes = constDyn $ "placeholder" =: "example.com"}
           text ":"
           prt  <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "80"}
-          port :: Dynamic t Int <- holdDyn 80 (fmapMaybe readMaybe $ updated (value prt))
+          port :: Dynamic t Int <- holdDyn 80 (fmapMaybe (readMaybe . T.unpack) $ updated (value prt))
           path <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "a/b" }
           BaseFullUrl `mapDyn` value schm `myApDyn` value srv `myApDyn` port `myApDyn` value path
 

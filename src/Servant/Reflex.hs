@@ -23,26 +23,18 @@ module Servant.Reflex
   , module Servant.Common.BaseUrl
   ) where
 
-import           Control.Applicative        ((<$>), liftA2)
-import           Control.Monad.Trans.Except
-import qualified Data.ByteString.Char8 as BS
-import           Data.ByteString.Lazy       (ByteString)
-import qualified Data.CaseInsensitive as CI
-import           Data.List
+import           Control.Applicative
 import           Data.Proxy
 import           Data.String.Conversions
-import           Data.Maybe                 (maybeToList)
-import           Data.Text                  (unpack)
-import           Data.Traversable           (sequenceA)
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import           Data.Text.Encoding
 import           GHC.TypeLits
-import qualified Network.HTTP.Media         as M
 import           Servant.API
 import           Servant.Common.BaseUrl
 import           Servant.Common.Req
-import           Servant.API.ContentTypes
 import           Reflex
 import           Reflex.Dom
-import           Reflex.Dom.Xhr
 
 -- * Accessing APIs as a Client
 
@@ -92,7 +84,7 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
       => HasClient t m (Capture capture a :> sublayout) where
 
   type Client t m (Capture capture a :> sublayout) =
-    Behavior t (Either String a) -> Client t m sublayout
+    Behavior t (Either Text a) -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -100,7 +92,7 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
                     (prependToPathParts p req)
                     baseurl
 
-    where p = (fmap . fmap) (unpack . toUrlPiece) val
+    where p = (fmap . fmap) (toUrlPiece) val
 
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
@@ -111,9 +103,9 @@ instance {-# OVERLAPPABLE #-}
     Event t () -> m (Event t (ReqResult a))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
-  clientWithRoute Proxy q req baseurl =
+  clientWithRoute Proxy _ req baseurl =
     performRequestCT (Proxy :: Proxy ct) method req' baseurl
-      where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
+      where method = decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
 -- -- VERB (No content) --
@@ -124,9 +116,9 @@ instance {-# OVERLAPPING #-}
     Event t () -> m (Event t (ReqResult NoContent))
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
-  clientWithRoute Proxy q req baseurl =
+  clientWithRoute Proxy _ req baseurl =
     performRequestNoBody method req baseurl
-      where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
+      where method = decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 -- -- HEADERS Verb (Content) --
 -- -- Headers combinator not treated in fully general case,
@@ -184,9 +176,9 @@ instance (KnownSymbol sym, ToHttpApiData a,
       => HasClient t m (Header sym a :> sublayout) where
 
   type Client t m (Header sym a :> sublayout) =
-    Behavior t (Either String a) -> Client t m sublayout
+    Behavior t (Either Text a) -> Client t m sublayout
 
-  clientWithRoute Proxy q req baseurl mval =
+  clientWithRoute Proxy q req baseurl _ =
     clientWithRoute (Proxy :: Proxy sublayout)
                     q
                     req
@@ -195,8 +187,6 @@ instance (KnownSymbol sym, ToHttpApiData a,
                     --        mval
                     -- )
                     baseurl
-
-    where hname = symbolVal (Proxy :: Proxy sym)
 
 -- | Using a 'HttpVersion' combinator in your API doesn't affect the client
 -- functions.
@@ -240,7 +230,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 
   type Client t m (QueryParam sym a :> sublayout) =
     -- TODO (Maybe a), or (Maybe (Maybe a))? (should the user be able to send a Nothing)
-    Behavior t (Either String a) -> Client t m sublayout
+    Behavior t (Either Text a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy q req baseurl mparam =
@@ -248,8 +238,8 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       (req {qParams = paramPair : qParams req}) baseurl
 
     where pname = symbolVal (Proxy :: Proxy sym)
-          p prm = QueryPartParam $ (fmap . fmap) (unpack . toQueryParam) prm
-          paramPair = (pname, p mparam)
+          p prm = QueryPartParam $ (fmap . fmap) (toQueryParam) prm
+          paramPair = (T.pack pname, p mparam)
 
 -- | If you use a 'QueryParams' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
@@ -288,9 +278,9 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
   clientWithRoute Proxy q req baseurl paramlist =
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
 
-      where req'    = req { qParams =  (pname, params') : qParams req }
+      where req'    = req { qParams =  (T.pack pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' = QueryPartParams $ (fmap . fmap) (unpack . toQueryParam)
+            params' = QueryPartParams $ (fmap . fmap) (toQueryParam)
                         paramlist
 
 
@@ -328,7 +318,7 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
 
     where req'     = req { qParams = thisPair : qParams req }
-          thisPair = (pName, QueryPartFlag flag) :: (String, QueryPart t)
+          thisPair = (T.pack pName, QueryPartFlag flag) :: (Text, QueryPart t)
           pName    = symbolVal (Proxy :: Proxy sym)
 
 
@@ -336,16 +326,16 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
 -- back the full `Response`.
 -- TODO redo
 instance (MonadWidget t m) => HasClient t m Raw where
-  type Client t m Raw = Behavior t (Either String XhrRequest)
+  type Client t m Raw = Behavior t (Either Text (XhrRequest ()))
                       -> Event t ()
                       -> m (Event t (ReqResult ()))
 
   -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> BaseUrl -> Client t m Raw
-  clientWithRoute p q req baseurl xhrs triggers = do
+  clientWithRoute _ _ _ baseurl xhrs triggers = do
     let xhrs'  = liftA2 (\x path -> case x of
                     Left e  -> Left e
                     Right jx -> Right $ jx {_xhrRequest_url = path
-                                            ++ _xhrRequest_url jx})
+                                            <> _xhrRequest_url jx})
                  xhrs
                  (showBaseUrl <$> current baseurl)
         reqs   = tag xhrs' triggers
@@ -386,14 +376,14 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) =
-    Behavior t (Either String a) -> Client t m sublayout
+    Behavior t (Either Text a) -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl body =
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
        where req'        = req { reqBody = bodyBytesCT }
              ctProxy     = Proxy :: Proxy ct
-             ctString    = show $ contentType ctProxy
-             --ctString    = BS.unpack . CI.original . M.mainType $ contentType ctProxy
+             ctString    = T.pack $ show $ contentType ctProxy
+             --ctString    = decodeUtf8 . CI.original . M.mainType $ contentType ctProxy
              bodyBytesCT = Just $ (fmap . fmap)
                              (\b -> (mimeRender ctProxy b, ctString))
                              body
@@ -404,7 +394,7 @@ instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m 
 
   clientWithRoute Proxy q req baseurl =
      clientWithRoute (Proxy :: Proxy sublayout) q
-                     (prependToPathParts (constant (Right p)) req)
+                     (prependToPathParts (constant (Right $ T.pack p)) req)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)

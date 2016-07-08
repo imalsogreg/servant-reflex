@@ -13,9 +13,11 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import           Data.Maybe
 import           Data.Monoid
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy.Encoding as LTE
 -- import qualified Data.Foldable as F
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
 import Data.Proxy
 import qualified Data.Map as Map
 -- import Data.Monoid
@@ -37,7 +39,6 @@ import Reflex
 import Reflex.Dom
 
 import Servant.API.BasicAuth
-import qualified Data.ByteString.Char8 as BS
 
 -- import qualified Network.HTTP.Client as Client
 
@@ -84,7 +85,7 @@ prependToPathParts p req =
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Behavior t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = headers req
-                                         <> [(name, fmap (toHeader) val)]
+                                         <> [(name, fmap (TE.decodeUtf8 . toHeader) val)]
 --                                      <> [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
                              }
 
@@ -102,7 +103,7 @@ performRequest :: forall t m.MonadWidget t m
                -> m (Event t XhrResponse, Event t Text)
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
-performRequest reqMethod req reqHost trigger = do
+performRequest reqMeth req reqHost trigger = do
 
   -- Ridiculous functor-juggling! How to clean this up?
   let t :: Behavior t [Either Text Text]
@@ -137,7 +138,7 @@ performRequest reqMethod req reqHost trigger = do
       queryString :: Behavior t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
 --        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") (sequence qs)
-      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </>  if null q then p else p <> "?" <> q) baseUrl urlPath queryString
+      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q) baseUrl urlPath queryString
         where
           (</>) :: Text -> Text -> Text
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
@@ -146,38 +147,39 @@ performRequest reqMethod req reqHost trigger = do
       xhrHeaders :: Behavior t [(Text, Text)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
-      mkConfigBody :: [(Text,Text)] -> (Either Text (BL.ByteString, Text)) -> Either Text (XhrRequestConfig x)
-      mkConfigBody hs rb = case rb of
+      mkConfigBody :: [(Text,Text)] -> (Either Text (BL.ByteString, Text)) -> Either Text (XhrRequestConfig LT.Text)
+      mkConfigBody _ rb = case rb of
                   Left e               -> Left e
                   (Right (bBytes, bCT)) ->
-                    Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                    Right $ def { _xhrRequestConfig_sendData = LTE.decodeUtf8 bBytes
                                 , _xhrRequestConfig_headers  =
                                     Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
 
-      xhrOpts :: Behavior t (Either Text (XhrRequestConfig x))
+      xhrOpts :: Behavior t (Either Text (XhrRequestConfig LT.Text))
       xhrOpts = case reqBody req of
-        Nothing    -> fmap (\h -> Right $ def { _xhrRequestConfig_headers = Map.fromList h }) xhrHeaders
+        Nothing    -> fmap (\h -> Right $ XhrRequestConfig
+                        (Map.fromList h) Nothing Nothing Nothing "") xhrHeaders
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
       mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
       mkAuth _ (Left e) = Left e
       mkAuth Nothing r  = r
       mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
-        { _xhrRequestConfig_user     = Just $ BS.unpack u
-        , _xhrRequestConfig_password = Just $ BS.unpack p}
+        { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
+        , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
       addAuth :: Behavior t (Either Text (XhrRequestConfig x)) -> Behavior t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
         Nothing -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMethod p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
   let reqs    = tag xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 
-  resps <- performRequestAsync okReqs
+  resps <- performRequestAsync (fmap LT.unpack <$> okReqs)
   return (resps, badReqs)
 
   -- let oneNamedPair :: String -> [QueryPart] -> String
@@ -203,22 +205,22 @@ performRequestNoBody ::
   forall t m .MonadWidget t m => Text -> Req t -> Dynamic t BaseUrl
 --                               -> Event t () -> m (Event t (Maybe NoContent, XhrResponse))
                               -> Event t () -> m (Event t (ReqResult NoContent))
-performRequestNoBody reqMethod req reqHost trigger = do
-  -- performRequest reqMethod req reqHost trigger
+performRequestNoBody _ _ _ _ = do
+  -- performRequest reqMeth req reqHost trigger
   undefined
   -- return hdrs
 
 performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
                  => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (ReqResult a))
-performRequestCT ct reqMethod req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMethod req reqHost trigger
+performRequestCT ct reqMeth req reqHost trigger = do
+  (resp, badReq) <- performRequest reqMeth req reqHost trigger
   let decodes = ffor resp $ \xhr ->
         ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
          =<< note "No body text" (_xhrResponse_responseText xhr), xhr)
       reqs = ffor decodes $ \case
-        (Right a, resp) -> ResponseSuccess a resp
-        (Left e,  resp) -> ResponseFailure e resp
+        (Right a, r) -> ResponseSuccess a r
+        (Left e,  r) -> ResponseFailure (T.pack e) r
   return $ leftmost [reqs, fmap RequestFailure badReq]
 
 note :: e -> Maybe a -> Either e a

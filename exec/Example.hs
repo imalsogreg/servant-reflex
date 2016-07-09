@@ -59,7 +59,7 @@ run = do
     text "Name"
     el "br" $ return ()
     inp :: Dynamic t Text <- fmap value (textInput def)
-    let checkedName = fmap (\i -> bool (Right i) (Left "Need a name") (T.null i)) (current inp)
+    let checkedName = fmap (\i -> bool (QParamSome i) (QParamInvalid "Need a name") (T.null i)) (current inp)
     el "br" $ return ()
 
     text "Greetings (space-separated)"

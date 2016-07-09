@@ -19,6 +19,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Proxy
+import qualified Data.Text as T
 import qualified Data.Map as Map
 -- import Data.Monoid
 -- import Data.String
@@ -62,7 +63,15 @@ response (ResponseSuccess _ x) = Just x
 response (ResponseFailure _ x) = Just x
 response _                     = Nothing
 
-data QueryPart t = QueryPartParam  (Behavior t (Either Text Text))
+
+data QParam a = QParamSome a | QNone | QParamInvalid Text
+
+qParamToQueryPart :: ToHttpApiData a => QParam a -> Either Text (Maybe Text)
+qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
+qParamToQueryPart QNone             = Right Nothing
+qParamToQueryPart (QParamInvalid e) = Left e
+
+data QueryPart t = QueryPartParam  (Behavior t (Either Text (Maybe Text)))
                  | QueryPartParams (Behavior t [Text])
                  | QueryPartFlag   (Behavior t Bool)
 
@@ -121,8 +130,9 @@ performRequest reqMeth req reqHost trigger = do
       queryPartString :: (Text, QueryPart t) -> Behavior t (Maybe (Either Text Text))
       queryPartString (pName, qp) = case qp of
         QueryPartParam p -> ffor p $ \case
-          Left e  -> Just (Left e)
-          Right a -> Just (Right $ pName <> "=" <> a)
+          Left e         -> Just (Left e)
+          Right (Just a) -> Just (Right $ pName <> "=" <> a)
+          Right Nothing  -> Nothing
         QueryPartParams ps -> ffor ps $ \pStrings ->
           if null pStrings
           then Nothing

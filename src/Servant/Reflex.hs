@@ -199,6 +199,7 @@ instance HasClient t m sublayout
   clientWithRoute Proxy q =
     clientWithRoute (Proxy :: Proxy sublayout) q
 
+
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
 -- an additional argument of the type specified by your 'QueryParam',
@@ -230,7 +231,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 
   type Client t m (QueryParam sym a :> sublayout) =
     -- TODO (Maybe a), or (Maybe (Maybe a))? (should the user be able to send a Nothing)
-    Behavior t (Either Text a) -> Client t m sublayout
+    Behavior t (QParam a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy q req baseurl mparam =
@@ -238,7 +239,9 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       (req {qParams = paramPair : qParams req}) baseurl
 
     where pname = symbolVal (Proxy :: Proxy sym)
-          p prm = QueryPartParam $ (fmap . fmap) (toQueryParam) prm
+          --p prm = QueryPartParam $ (fmap . fmap) (toQueryParam) prm
+          --paramPair = (T.pack pname, p mparam)
+          p prm = QueryPartParam $ fmap qParamToQueryPart prm -- (fmap . fmap) (unpack . toQueryParam) prm
           paramPair = (T.pack pname, p mparam)
 
 -- | If you use a 'QueryParams' in one of your endpoints in your API,

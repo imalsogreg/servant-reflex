@@ -14,6 +14,7 @@ import qualified Data.Text.Encoding as TE
 -- import qualified Data.Foldable as F
 import qualified Data.List as L
 import Data.Proxy
+import qualified Data.Text as T
 import qualified Data.Map as Map
 -- import Data.Monoid
 -- import Data.String
@@ -58,7 +59,15 @@ response (ResponseSuccess _ x) = Just x
 response (ResponseFailure _ x) = Just x
 response _                     = Nothing
 
-data QueryPart t = QueryPartParam  (Behavior t (Either String String))
+
+data QParam a = QParamSome a | QNone | QParamInvalid String
+
+qParamToQueryPart :: ToHttpApiData a => QParam a -> Either String (Maybe String)
+qParamToQueryPart (QParamSome a)    = Right (Just . T.unpack $ toQueryParam a)
+qParamToQueryPart QNone             = Right Nothing
+qParamToQueryPart (QParamInvalid e) = Left e
+
+data QueryPart t = QueryPartParam  (Behavior t (Either String (Maybe String)))
                  | QueryPartParams (Behavior t [String])
                  | QueryPartFlag   (Behavior t Bool)
 
@@ -117,8 +126,9 @@ performRequest reqMethod req reqHost trigger = do
       queryPartString :: (String, QueryPart t) -> Behavior t (Maybe (Either String String))
       queryPartString (pName, qp) = case qp of
         QueryPartParam p -> ffor p $ \case
-          Left e  -> Just (Left e)
-          Right a -> Just (Right $ pName ++ "=" ++ a)
+          Left e         -> Just (Left e)
+          Right (Just a) -> Just (Right $ pName ++ "=" ++ a)
+          Right Nothing  -> Nothing
         QueryPartParams ps -> ffor ps $ \pStrings ->
           if null pStrings
           then Nothing

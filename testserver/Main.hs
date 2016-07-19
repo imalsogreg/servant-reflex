@@ -12,6 +12,7 @@ import qualified Data.List as L
 import           Data.Monoid
 import           Data.Proxy
 import           Data.Text hiding (length, null, map, head, toUpper)
+import qualified Data.Text as T
 import           GHC.Generics
 import           Snap.Http.Server
 import           Snap.Core
@@ -45,16 +46,17 @@ data App = App
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
 server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDirectory "static"
-  where sayhi nm greetings withGusto = case nm of
-          Nothing -> return ("Sorry, who are you?" :: String)
+  where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
+        sayhi nm greetings withGusto = case nm of
+          Nothing -> return ("Sorry, who are you?" :: Text)
           Just n  -> do
-           let modifier  = bool id (map toUpper) withGusto
+           let modifier  = bool id T.toUpper withGusto
                greetPart
                  | null greetings        = "Hi, "
-                 | length greetings == 1 = L.head greetings ++ ", "
-                 | otherwise             = L.intercalate ", " (L.init greetings)
-                                       ++ ", and " ++ L.last greetings ++ ", "
-           return . modifier $ greetPart ++ n
+                 | length greetings == 1 = L.head greetings <> ", "
+                 | otherwise             = T.intercalate ", " (L.init greetings)
+                                       <> ", and " <> L.last greetings <> ", "
+           return . modifier $ greetPart <> n
         dbl x = return $ x * 2
         multi = return . bool "Box unchecked" "Box Checked"
 

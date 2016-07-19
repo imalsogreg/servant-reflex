@@ -47,7 +47,7 @@ import           Reflex.Dom
 -- > myApi = Proxy
 -- >
 -- > getAllBooks :: Event t () -> m (Event t (Either XhrError ((),[Book])))
--- > postNewBook :: Behavior t (Maybe Book) -> Event t ()
+-- > postNewBook :: Dynamic t (Maybe Book) -> Event t ()
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
@@ -76,7 +76,7 @@ instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
 -- >
 -- > getBook :: MonadWidget t m
 --           => Dynamic t BaseUrl
---           -> Behavior t (Maybe Text)
+--           -> Dynamic t (Maybe Text)
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
@@ -84,7 +84,7 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
       => HasClient t m (Capture capture a :> sublayout) where
 
   type Client t m (Capture capture a :> sublayout) =
-    Behavior t (Either Text a) -> Client t m sublayout
+    Dynamic t (Either Text a) -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -176,7 +176,7 @@ instance (KnownSymbol sym, ToHttpApiData a,
       => HasClient t m (Header sym a :> sublayout) where
 
   type Client t m (Header sym a :> sublayout) =
-    Behavior t (Either Text a) -> Client t m sublayout
+    Dynamic t (Either Text a) -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl _ =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -231,7 +231,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 
   type Client t m (QueryParam sym a :> sublayout) =
     -- TODO (Maybe a), or (Maybe (Maybe a))? (should the user be able to send a Nothing)
-    Behavior t (QParam a) -> Client t m sublayout
+    Dynamic t (QParam a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRoute Proxy q req baseurl mparam =
@@ -276,7 +276,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       => HasClient t m (QueryParams sym a :> sublayout) where
 
   type Client t m (QueryParams sym a :> sublayout) =
-    Behavior t [a] -> Client t m sublayout
+    Dynamic t [a] -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl paramlist =
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
@@ -315,7 +315,7 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
       => HasClient t m (QueryFlag sym :> sublayout) where
 
   type Client t m (QueryFlag sym :> sublayout) =
-    Behavior t Bool -> Client t m sublayout
+    Dynamic t Bool -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl flag =
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
@@ -329,7 +329,7 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
 -- back the full `Response`.
 -- TODO redo
 instance (MonadWidget t m) => HasClient t m Raw where
-  type Client t m Raw = Behavior t (Either Text (XhrRequest ()))
+  type Client t m Raw = Dynamic t (Either Text (XhrRequest ()))
                       -> Event t ()
                       -> m (Event t (ReqResult ()))
 
@@ -340,8 +340,8 @@ instance (MonadWidget t m) => HasClient t m Raw where
                     Right jx -> Right $ jx {_xhrRequest_url = path
                                             <> _xhrRequest_url jx})
                  xhrs
-                 (showBaseUrl <$> current baseurl)
-        reqs   = tag xhrs' triggers
+                 (showBaseUrl <$> baseurl)
+        reqs   = tagDyn xhrs' triggers
         okReq  = fmapMaybe hush reqs
         badReq = fmapMaybe tattle reqs
     resps <- performRequestAsync okReq
@@ -379,7 +379,7 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) =
-    Behavior t (Either Text a) -> Client t m sublayout
+    Dynamic t (Either Text a) -> Client t m sublayout
 
   clientWithRoute Proxy q req baseurl body =
     clientWithRoute (Proxy :: Proxy sublayout) q req' baseurl
@@ -397,7 +397,7 @@ instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m 
 
   clientWithRoute Proxy q req baseurl =
      clientWithRoute (Proxy :: Proxy sublayout) q
-                     (prependToPathParts (constant (Right $ T.pack p)) req)
+                     (prependToPathParts (pure (Right $ T.pack p)) req)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
@@ -423,7 +423,7 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
 instance (HasClient t m api, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) where
 
-  type Client t m (BasicAuth realm usr :> api) = Behavior t (Maybe BasicAuthData)
+  type Client t m (BasicAuth realm usr :> api) = Dynamic t (Maybe BasicAuthData)
                                                -> Client t m api
 
   clientWithRoute Proxy q req baseurl authdata =

@@ -71,28 +71,28 @@ qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
 qParamToQueryPart QNone             = Right Nothing
 qParamToQueryPart (QParamInvalid e) = Left e
 
-data QueryPart t = QueryPartParam  (Behavior t (Either Text (Maybe Text)))
-                 | QueryPartParams (Behavior t [Text])
-                 | QueryPartFlag   (Behavior t Bool)
+data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
+                 | QueryPartParams (Dynamic t [Text])
+                 | QueryPartFlag   (Dynamic t Bool)
 
 data Req t = Req
   { reqMethod    :: Text
-  , reqPathParts :: [Behavior t (Either Text Text)]
+  , reqPathParts :: [Dynamic t (Either Text Text)]
   , qParams      :: [(Text, QueryPart t)]
-  , reqBody      :: Maybe (Behavior t (Either Text (BL.ByteString, Text)))
+  , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
   -- , reqAccept    :: [MediaType]  -- TODO ?
-  , headers      :: [(Text, Behavior t Text)]
-  , authData     :: Maybe (Behavior t (Maybe BasicAuthData))
+  , headers      :: [(Text, Dynamic t Text)]
+  , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
 defReq :: Reflex t => Req t
 defReq = Req "GET" [] [] Nothing [] Nothing
 
-prependToPathParts :: Reflex t => Behavior t (Either Text Text) -> Req t -> Req t
+prependToPathParts :: Reflex t => Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
-addHeader :: (ToHttpApiData a, Reflex t) => Text -> Behavior t (Either Text a) -> Req t -> Req t
+addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = headers req
                                          <> [(name, fmap (TE.decodeUtf8 . toHeader) val)]
 --                                      <> [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
@@ -115,19 +115,19 @@ performRequest :: forall t m.MonadWidget t m
 performRequest reqMeth req reqHost trigger = do
 
   -- Ridiculous functor-juggling! How to clean this up?
-  let t :: Behavior t [Either Text Text]
+  let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
-      baseUrl :: Behavior t (Either Text Text)
-      baseUrl = Right . showBaseUrl <$> current reqHost
+      baseUrl :: Dynamic t (Either Text Text)
+      baseUrl = Right . showBaseUrl <$> reqHost
 
-      urlParts :: Behavior t (Either Text [Text])
+      urlParts :: Dynamic t (Either Text [Text])
       urlParts = fmap sequence t
 
-      urlPath :: Behavior t (Either Text Text)
+      urlPath :: Dynamic t (Either Text Text)
       urlPath = (fmap.fmap) (T.intercalate "/") urlParts
 
-      queryPartString :: (Text, QueryPart t) -> Behavior t (Maybe (Either Text Text))
+      queryPartString :: (Text, QueryPart t) -> Dynamic t (Maybe (Either Text Text))
       queryPartString (pName, qp) = case qp of
         QueryPartParam p -> ffor p $ \case
           Left e         -> Just (Left e)
@@ -142,10 +142,10 @@ performRequest reqMeth req reqHost trigger = do
           False -> Nothing
 
 
-      queryPartStrings :: [Behavior t (Maybe (Either Text Text))]
+      queryPartStrings :: [Dynamic t (Maybe (Either Text Text))]
       queryPartStrings = map queryPartString (qParams req)
-      queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Behavior t (Either Text [Text])
-      queryString :: Behavior t (Either Text Text) =
+      queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Dynamic t (Either Text [Text])
+      queryString :: Dynamic t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
 --        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") (sequence qs)
       xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q) baseUrl urlPath queryString
@@ -154,7 +154,7 @@ performRequest reqMeth req reqHost trigger = do
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
                   | otherwise = x <> "/" <> y
 
-      xhrHeaders :: Behavior t [(Text, Text)]
+      xhrHeaders :: Dynamic t [(Text, Text)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
       mkConfigBody :: [(Text,Text)] -> (Either Text (BL.ByteString, Text)) -> Either Text (XhrRequestConfig LT.Text)
@@ -165,7 +165,7 @@ performRequest reqMeth req reqHost trigger = do
                                 , _xhrRequestConfig_headers  =
                                     Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
 
-      xhrOpts :: Behavior t (Either Text (XhrRequestConfig LT.Text))
+      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig LT.Text))
       xhrOpts = case reqBody req of
         Nothing    -> fmap (\h -> Right $ XhrRequestConfig
                         (Map.fromList h) Nothing Nothing Nothing "") xhrHeaders
@@ -178,14 +178,14 @@ performRequest reqMeth req reqHost trigger = do
         { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
         , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
-      addAuth :: Behavior t (Either Text (XhrRequestConfig x)) -> Behavior t (Either Text (XhrRequestConfig x))
+      addAuth :: Dynamic t (Either Text (XhrRequestConfig x)) -> Dynamic t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
         Nothing -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
       xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
-  let reqs    = tag xhrReq trigger
+  let reqs    = tagDyn xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 

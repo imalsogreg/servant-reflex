@@ -15,6 +15,7 @@ type API = "getunit" :> Get '[JSON] ()
       :<|> "double" :> ReqBody '[JSON] Double
                     :> Post '[JSON] Double
       :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] String
+      :<|> "headertest" :> Get '[JSON] (Headers '[Header "myheader" Integer] Int)
       :<|> Raw
 
 type GET = Get '[JSON] ()

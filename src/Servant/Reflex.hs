@@ -23,7 +23,9 @@ module Servant.Reflex
   , module Servant.Common.BaseUrl
   ) where
 
+import           Control.Arrow              (first, second)
 import           Control.Applicative        ((<$>), liftA2)
+import           Control.Monad.IO.Class     (liftIO)
 import           Control.Monad.Trans.Except
 import qualified Data.ByteString.Char8 as BS
 import           Data.ByteString.Lazy       (ByteString)
@@ -34,6 +36,7 @@ import           Data.String.Conversions
 import           Data.Maybe                 (maybeToList)
 import           Data.Text                  (unpack)
 import           Data.Traversable           (sequenceA)
+import qualified Data.JSString              as JS
 import           GHC.TypeLits
 import qualified Network.HTTP.Media         as M
 import           Servant.API
@@ -41,8 +44,9 @@ import           Servant.Common.BaseUrl
 import           Servant.Common.Req
 import           Servant.API.ContentTypes
 import           Reflex
-import           Reflex.Dom
-import           Reflex.Dom.Xhr
+import           Reflex.Dom hiding (XhrRequuest(..))
+-- import           Reflex.Dom.Xhr
+import qualified JavaScript.Web.XMLHttpRequest as Xhr
 
 -- * Accessing APIs as a Client
 
@@ -102,6 +106,24 @@ instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m s
 
     where p = (fmap . fmap) (unpack . toUrlPiece) val
 
+
+toHeaders :: BuildHeadersTo ls => ReqResult a -> IO (ReqResult (Headers ls a))
+toHeaders r = do
+  -- TODO: This is where we would extract the response headers
+  hdrs <- maybe (return []) (\xhr -> getHeaderList xhr) (response r)
+  print hdrs
+  return $ ffor r $ \a -> Headers {getResponse = a
+                                  ,getHeadersHList = buildHeadersTo hdrs}
+
+
+getHeaderList :: Xhr.Response a -> IO [(CI.CI BS.ByteString,BS.ByteString)]
+getHeaderList r = do
+  s <- JS.unpack <$> Xhr.getAllResponseHeaders r
+  print s
+  -- TODO provisional thing for figuring out how to extract response headers. Totally unsafe hack
+  return $ map (first (CI.mk . BS.pack) . second (\x -> BS.pack . drop 2 . take (length x - 1) $ x) . break (== ':')) (lines s)
+
+
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
@@ -133,37 +155,44 @@ instance {-# OVERLAPPING #-}
 -- -- in order to deny instances for (Headers ls (Capture "id" Int)),
 -- -- a combinator that wouldn't make sense
 -- -- TODO Overlapping??
--- instance {-# OVERLAPPABLE #-}
---   -- Note [Non-Empty Content Types]
---   ( MimeUnrender ct a, BuildHeadersTo ls,
---     ReflectMethod method, cts' ~ (ct ': cts),
---     MonadWidget t m
---   ) => HasClient t m (Verb method status cts' (Headers ls a)) where
---   type Client t m (Verb method status cts' (Headers ls a))
---     = Event t () -> m (Event t (Maybe a, XhrResponse))
---       -- ExceptT ServantError IO (Headers ls a)
---   clientWithRoute Proxy req baseurl = do
---     let method = reflectMethod (Proxy :: Proxy method)
---     (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
---     return $ Headers { getResponse = resp
---                      , getHeadersHList = buildHeadersTo hdrs
---                      }
+instance {-# OVERLAPPING #-}
+  -- Note [Non-Empty Content Types]
+  ( MimeUnrender ct a, BuildHeadersTo ls,
+    ReflectMethod method, cts' ~ (ct ': cts),
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts' (Headers ls a)) where
+  type Client t m (Verb method status cts' (Headers ls a))
+    = Event t () -> m (Event t (ReqResult (Headers ls a)))
+      -- ExceptT ServantError IO (Headers ls a)
+  clientWithRoute Proxy q req baseurl = \triggers -> do
+    resps <- performRequestCT (Proxy :: Proxy ct) method req' baseurl triggers
+    -- return (fmap toHeaders resps)
+    performEvent $ fmap (liftIO . toHeaders) resps
+      where method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
+            req'   = req { reqMethod = method }
+    -- Old code:
+    -- let method = reflectMethod (Proxy :: Proxy method)
+    -- (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
+    -- return $ Headers { getResponse = resp
+    --                  , getHeadersHList = buildHeadersTo hdrs
+    --                  }
 
 -- TODO Overlapping??
 -- -- HEADERS Verb (No content) --
--- instance {-# OVERLAPPABLE #-}
---   ( BuildHeadersTo ls, ReflectMethod method,
---     MonadWidget t m
---   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
---   type Client t m (Verb method status cts (Headers ls NoContent))
---     = Event t () -> m (Event t XhrResponse)
---       -- ExceptT ServantError IO (Headers ls NoContent)
---   clientWithRoute Proxy req baseurl = do
---     let method = reflectMethod (Proxy :: Proxy method)
---     hdrs <- performRequestNoBody method req baseurl
---     return $ Headers { getResponse = NoContent
---                      , getHeadersHList = buildHeadersTo hdrs
---                      }
+instance {-# OVERLAPPING #-}
+  ( BuildHeadersTo ls, ReflectMethod method,
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
+  type Client t m (Verb method status cts (Headers ls NoContent))
+    = Event t () -> m (Event t (ReqResult (Headers ls NoContent)))
+      -- ExceptT ServantError IO (Headers ls NoContent)
+  clientWithRoute Proxy q req baseurl triggers = do
+    let method = BS.unpack $ reflectMethod (Proxy :: Proxy method)
+    resps <- performRequestNoBody method req baseurl triggers
+    performEvent (fmap (liftIO . toHeaders) resps)
+    -- return $ Headers { getResponse = NoContent
+    --                  , getHeadersHList = buildHeadersTo hdrs
+    --                  }
 
 
 -- HEADER
@@ -336,23 +365,23 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
 -- back the full `Response`.
 -- TODO redo
 instance (MonadWidget t m) => HasClient t m Raw where
-  type Client t m Raw = Behavior t (Either String XhrRequest)
+  type Client t m Raw = Behavior t (Either String Xhr.Request)
                       -> Event t ()
                       -> m (Event t (ReqResult ()))
 
-  -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> BaseUrl -> Client t m Raw
+  -- clientWithRoute :: Proxy Raw -> Proxy m -> Req -> Dynamic t BaseUrl -> Client t m Raw
   clientWithRoute p q req baseurl xhrs triggers = do
     let xhrs'  = liftA2 (\x path -> case x of
                     Left e  -> Left e
-                    Right jx -> Right $ jx {_xhrRequest_url = path
-                                            ++ _xhrRequest_url jx})
+                    Right jx -> Right (jx { Xhr.reqURI = JS.pack (JS.unpack (Xhr.reqURI jx) </> path) }))-- TODO
                  xhrs
                  (showBaseUrl <$> current baseurl)
         reqs   = tag xhrs' triggers
         okReq  = fmapMaybe hush reqs
         badReq = fmapMaybe tattle reqs
-    resps <- performRequestAsync okReq
-    return $ leftmost [fmap (ResponseSuccess () ) resps
+    -- resps <- performRequestAsync okReq
+    resps <- performEvent $ fmap (liftIO . Xhr.xhrString) okReq
+    return $ leftmost [fmap (\resp -> ResponseSuccess () resp) resps
                       ,fmap RequestFailure badReq]
 
 
@@ -430,7 +459,7 @@ instance HasClient t m api => HasClient t m (IsSecure :> api) where
 instance (HasClient t m api, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) where
 
-  type Client t m (BasicAuth realm usr :> api) = Behavior t (Maybe BasicAuthData)
+  type Client t m (BasicAuth realm usr :> api) = Behavior t (Either String BasicAuthData)
                                                -> Client t m api
 
   clientWithRoute Proxy q req baseurl authdata =

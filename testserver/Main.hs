@@ -8,11 +8,13 @@
 import           Data.Aeson
 import           Data.Bool
 import           Data.Char (toUpper)
+import           Data.CaseInsensitive (CI(..),mk)
 import qualified Data.List as L
 import           Data.Monoid
 import           Data.Proxy
 import           Data.Text hiding (length, null, map, head, toUpper)
 import           GHC.Generics
+import           Network.HTTP.Types
 import           Snap.Http.Server
 import           Snap.Core
 import           Servant.Server.Internal.SnapShims
@@ -44,7 +46,7 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDirectory "static"
+server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> myHeader :<|> serveDirectory "static"
   where sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: String)
           Just n  -> do
@@ -57,6 +59,8 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDire
            return . modifier $ greetPart ++ n
         dbl x = return $ x * 2
         multi = return . bool "Box unchecked" "Box Checked"
+        myHeader = return (Headers 222 (buildHeadersTo [(mk "myheader" :: HeaderName,"333")]))
+          -- modifyResponse (addHeader (CI "myheader" ))
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.

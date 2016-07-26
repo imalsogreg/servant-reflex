@@ -1,10 +1,16 @@
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
 
 module Main where
 
 import Data.Bool
 import Data.Maybe
+import Data.Monoid
+import Data.Text (Text)
+import qualified Data.Text as T
 import Servant.API
 import Servant.Reflex
 import API
@@ -52,13 +58,13 @@ run = do
 
     text "Name"
     el "br" $ return ()
-    inp :: Dynamic t String <- fmap value (textInput def)
-    let checkedName = fmap (\i -> bool (Right i) (Left "Need a name") (null i)) (current inp)
+    inp :: Dynamic t Text <- fmap value (textInput def)
+    let checkedName = fmap (\i -> bool (QParamSome i) (QParamInvalid "Need a name") (T.null i)) (current inp)
     el "br" $ return ()
 
     text "Greetings (space-separated)"
     el "br" $ return ()
-    greetings <- fmap (fmap words . current . value) (textInput def)
+    greetings <- fmap (fmap T.words . current . value) (textInput def)
 
     el "br" $ return ()
 
@@ -75,27 +81,30 @@ run = do
     el "br" $ return ()
     dblinp <- value <$> textInput def
     dblBtn <- button "Double it"
-    dblResp <- dbl (fmap (note "read failure" . readMaybe) $ current dblinp) dblBtn
+    dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $ current dblinp) dblBtn
     dynText =<< holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
     el "br" (return ())
-    display =<< holdDyn "No number yet" (fmap show $ fmapMaybe reqSuccess dblResp)
+    display =<< holdDyn "No number yet" (fmap tShow $ fmapMaybe reqSuccess dblResp)
 
   elClass "div" "demo-group" $ do
     text "Multi-part path"
     b <- (current . value) <$> checkbox False def
     mpGo <- button "Test"
     multiResp <- multi b mpGo
-    dynText =<< holdDyn "No res yet" (fmap show $ fmapMaybe reqSuccess $ multiResp)
+    dynText =<< holdDyn "No res yet" (fmap tShow $ fmapMaybe reqSuccess $ multiResp)
 
-showXhrResponse :: XhrResponse -> String
+showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =
-  unlines ["stat: " ++ show stat
-          ,"stattxt: " ++ show stattxt
-          ,"resp: " ++ maybe "" showRB rbmay
-          ,"rtext: " ++ show rtmay]
+  T.unlines ["stat: " <> tShow stat
+            ,"stattxt: " <> tShow stattxt
+            ,"resp: " <> maybe "" showRB rbmay
+            ,"rtext: " <> tShow rtmay]
 
-showRB :: XhrResponseBody -> String
-showRB (XhrResponseBody_Default t) = show t
-showRB (XhrResponseBody_Text t) = show t
+tShow :: Show a => a -> Text
+tShow = T.pack . show
+
+showRB :: XhrResponseBody -> Text
+showRB (XhrResponseBody_Default t) = tShow t
+showRB (XhrResponseBody_Text t) = tShow t
 showRB (XhrResponseBody_Blob t) = "<Blob>"
-showRB (XhrResponseBody_ArrayBuffer t) = show t
+showRB (XhrResponseBody_ArrayBuffer t) = tShow t

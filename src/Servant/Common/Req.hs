@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,13 +9,17 @@
 module Servant.Common.Req where
 
 import Control.Applicative (liftA2, liftA3)
-import Data.ByteString.Char8 hiding (pack, filter, map, null, elem)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import           Data.Maybe
+import           Data.Monoid
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy.Encoding as LTE
 -- import qualified Data.Foldable as F
-import qualified Data.List as L
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
 import Data.Proxy
+import qualified Data.Text as T
 import qualified Data.Map as Map
 -- import Data.Monoid
 -- import Data.String
@@ -34,21 +40,20 @@ import Reflex
 import Reflex.Dom
 
 import Servant.API.BasicAuth
-import qualified Data.ByteString.Char8 as BS
 
 -- import qualified Network.HTTP.Client as Client
 
 import Web.HttpApiData
 
 data ReqResult a = ResponseSuccess a XhrResponse
-                 | ResponseFailure String XhrResponse
-                 | RequestFailure String
+                 | ResponseFailure Text XhrResponse
+                 | RequestFailure Text
 
 reqSuccess :: ReqResult a -> Maybe a
 reqSuccess (ResponseSuccess x _) = Just x
 reqSuccess _                     = Nothing
 
-reqFailure :: ReqResult a -> Maybe String
+reqFailure :: ReqResult a -> Maybe Text
 reqFailure (ResponseFailure s _) = Just s
 reqFailure (RequestFailure s)    = Just s
 reqFailure _                     = Nothing
@@ -58,129 +63,139 @@ response (ResponseSuccess _ x) = Just x
 response (ResponseFailure _ x) = Just x
 response _                     = Nothing
 
-data QueryPart t = QueryPartParam  (Behavior t (Either String String))
-                 | QueryPartParams (Behavior t [String])
+
+data QParam a = QParamSome a | QNone | QParamInvalid Text
+
+qParamToQueryPart :: ToHttpApiData a => QParam a -> Either Text (Maybe Text)
+qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
+qParamToQueryPart QNone             = Right Nothing
+qParamToQueryPart (QParamInvalid e) = Left e
+
+data QueryPart t = QueryPartParam  (Behavior t (Either Text (Maybe Text)))
+                 | QueryPartParams (Behavior t [Text])
                  | QueryPartFlag   (Behavior t Bool)
 
 data Req t = Req
-  { reqMethod    :: String
-  , reqPathParts :: [Behavior t (Either String String)]
-  , qParams      :: [(String, QueryPart t)]
-  , reqBody      :: Maybe (Behavior t (Either String (BL.ByteString, String)))
+  { reqMethod    :: Text
+  , reqPathParts :: [Behavior t (Either Text Text)]
+  , qParams      :: [(Text, QueryPart t)]
+  , reqBody      :: Maybe (Behavior t (Either Text (BL.ByteString, Text)))
   -- , reqAccept    :: [MediaType]  -- TODO ?
-  , headers      :: [(String, Behavior t String)]
+  , headers      :: [(Text, Behavior t Text)]
   , authData     :: Maybe (Behavior t (Maybe BasicAuthData))
   }
 
 defReq :: Reflex t => Req t
 defReq = Req "GET" [] [] Nothing [] Nothing
 
-prependToPathParts :: Reflex t => Behavior t (Either String String) -> Req t -> Req t
+prependToPathParts :: Reflex t => Behavior t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
-addHeader :: (ToHttpApiData a, Reflex t) => String -> Behavior t (Either String a) -> Req t -> Req t
+addHeader :: (ToHttpApiData a, Reflex t) => Text -> Behavior t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = headers req
-                                         ++ [(name, fmap (unpack . toHeader) val)]
---                                      ++ [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
+                                         <> [(name, fmap (TE.decodeUtf8 . toHeader) val)]
+--                                      <> [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
                              }
 
 -- * performing requests
 
-displayHttpRequest :: String -> String
-displayHttpRequest httpmethod = "HTTP " ++ httpmethod ++ " request"
+displayHttpRequest :: Text -> Text
+displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
 -- | This function actually performs the request.
 performRequest :: forall t m.MonadWidget t m
-               => String
+               => Text
                -> Req t
                -> Dynamic t BaseUrl
                -> Event t ()
-               -> m (Event t XhrResponse, Event t String)
+               -> m (Event t XhrResponse, Event t Text)
                -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
                --                            , [HTTP.Header], Response ByteString)
-performRequest reqMethod req reqHost trigger = do
+performRequest reqMeth req reqHost trigger = do
 
   -- Ridiculous functor-juggling! How to clean this up?
-  let t :: Behavior t [Either String String]
-      t = sequence $ L.reverse $ reqPathParts req
+  let t :: Behavior t [Either Text Text]
+      t = sequence $ reverse $ reqPathParts req
 
-      baseUrl :: Behavior t (Either String String)
+      baseUrl :: Behavior t (Either Text Text)
       baseUrl = Right . showBaseUrl <$> current reqHost
 
-      urlParts :: Behavior t (Either String [String])
+      urlParts :: Behavior t (Either Text [Text])
       urlParts = fmap sequence t
 
-      urlPath :: Behavior t (Either String String)
-      urlPath = (fmap.fmap) (L.intercalate "/") urlParts
+      urlPath :: Behavior t (Either Text Text)
+      urlPath = (fmap.fmap) (T.intercalate "/") urlParts
 
-      queryPartString :: (String, QueryPart t) -> Behavior t (Maybe (Either String String))
+      queryPartString :: (Text, QueryPart t) -> Behavior t (Maybe (Either Text Text))
       queryPartString (pName, qp) = case qp of
         QueryPartParam p -> ffor p $ \case
-          Left e  -> Just (Left e)
-          Right a -> Just (Right $ pName ++ "=" ++ a)
+          Left e         -> Just (Left e)
+          Right (Just a) -> Just (Right $ pName <> "=" <> a)
+          Right Nothing  -> Nothing
         QueryPartParams ps -> ffor ps $ \pStrings ->
           if null pStrings
           then Nothing
-          else Just $ Right (L.intercalate "&" (fmap (\p -> pName ++ '=' : p) pStrings))
+          else Just $ Right (T.intercalate "&" (fmap (\p -> pName <> "=" <> p) pStrings))
         QueryPartFlag fl -> ffor fl $ \case
           True ->  Just $ Right pName
           False -> Nothing
 
 
-      queryPartStrings :: [Behavior t (Maybe (Either String String))]
+      queryPartStrings :: [Behavior t (Maybe (Either Text Text))]
       queryPartStrings = map queryPartString (qParams req)
-      queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Behavior t (Either String [String])
-      queryString :: Behavior t (Either String String) =
-        ffor queryPartStrings' $ \qs -> fmap (L.intercalate "&") qs
---        ffor queryPartStrings' $ \qs -> fmap (L.intercalate "&") (sequence qs)
-      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </>  if null q then p else p ++ '?' : q) baseUrl urlPath queryString
+      queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Behavior t (Either Text [Text])
+      queryString :: Behavior t (Either Text Text) =
+        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
+--        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") (sequence qs)
+      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q) baseUrl urlPath queryString
         where
-          (</>) :: String -> String -> String
-          x </> y | ("/" `L.isSuffixOf` x) || ("/" `L.isPrefixOf` y) = x ++ y
-                  | otherwise = x ++ '/':y
+          (</>) :: Text -> Text -> Text
+          x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
+                  | otherwise = x <> "/" <> y
 
-      xhrHeaders :: Behavior t [(String, String)]
+      xhrHeaders :: Behavior t [(Text, Text)]
       xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
-      mkConfigBody :: [(String,String)] -> (Either String (BL.ByteString, String)) -> Either String XhrRequestConfig
-      mkConfigBody hs rb = case rb of
+      mkConfigBody :: [(Text,Text)] -> (Either Text (BL.ByteString, Text)) -> Either Text (XhrRequestConfig LT.Text)
+      mkConfigBody _ rb = case rb of
                   Left e               -> Left e
                   (Right (bBytes, bCT)) ->
-                    Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                    Right $ def { _xhrRequestConfig_sendData = LTE.decodeUtf8 bBytes
                                 , _xhrRequestConfig_headers  =
                                     Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
 
-      xhrOpts :: Behavior t (Either String XhrRequestConfig)
+      xhrOpts :: Behavior t (Either Text (XhrRequestConfig LT.Text))
       xhrOpts = case reqBody req of
-        Nothing    -> fmap (\h -> Right $ def { _xhrRequestConfig_headers = Map.fromList h }) xhrHeaders
+        Nothing    -> fmap (\h -> Right $ XhrRequestConfig
+                        (Map.fromList h) Nothing Nothing Nothing "") xhrHeaders
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
-      mkAuth :: Maybe BasicAuthData -> Either String XhrRequestConfig -> Either String XhrRequestConfig
+      mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
       mkAuth _ (Left e) = Left e
       mkAuth Nothing r  = r
       mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
-        { _xhrRequestConfig_user     = Just $ BS.unpack u
-        , _xhrRequestConfig_password = Just $ BS.unpack p}
+        { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
+        , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
-      addAuth :: Behavior t (Either String XhrRequestConfig) -> Behavior t (Either String XhrRequestConfig)
+      addAuth :: Behavior t (Either Text (XhrRequestConfig x)) -> Behavior t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
         Nothing -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMethod p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
   let reqs    = tag xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 
-  resps <- performRequestAsync okReqs
+  resps <- performRequestAsync (fmap LT.unpack <$> okReqs)
   return (resps, badReqs)
 
   -- let oneNamedPair :: String -> [QueryPart] -> String
   --     oneNamedPair pName ps =
-  --       L.intercalate "&" $ ffor ps $ \case
-  --         QueryPartParam pval -> pName ++ "=" ++ pval
+  --       T.intercalate "&" $ ffor ps $ \case
+  --         QueryPartParam pval -> pName <> "=" <> pval
   --         QueryPartFlag True  -> pName
   --         QueryPartFlag False -> error "Impossible case"
 
@@ -189,33 +204,33 @@ performRequest reqMethod req reqHost trigger = do
   --           (qParams req)
 
   --     queryString :: Behavior t String
-  --     queryString = fmap (L.intercalate "&") (sequence t')
+  --     queryString = fmap (T.intercalate "&") (sequence t')
 
-  --     xhrUrl = (liftA2 . liftA2) (\u q -> u ++ '?' : q) urlPath (fmap Just queryString)
+  --     xhrUrl = (liftA2 . liftA2) (\u q -> u <> '?' : q) urlPath (fmap Just queryString)
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
   -- TODO Proxy probably not needed
 performRequestNoBody ::
-  forall t m .MonadWidget t m => String -> Req t -> Dynamic t BaseUrl
+  forall t m .MonadWidget t m => Text -> Req t -> Dynamic t BaseUrl
 --                               -> Event t () -> m (Event t (Maybe NoContent, XhrResponse))
                               -> Event t () -> m (Event t (ReqResult NoContent))
-performRequestNoBody reqMethod req reqHost trigger = do
-  -- performRequest reqMethod req reqHost trigger
+performRequestNoBody _ _ _ _ = do
+  -- performRequest reqMeth req reqHost trigger
   undefined
   -- return hdrs
 
 performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
-                 => Proxy ct -> String -> Req t -> Dynamic t BaseUrl
+                 => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (ReqResult a))
-performRequestCT ct reqMethod req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMethod req reqHost trigger
+performRequestCT ct reqMeth req reqHost trigger = do
+  (resp, badReq) <- performRequest reqMeth req reqHost trigger
   let decodes = ffor resp $ \xhr ->
         ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
          =<< note "No body text" (_xhrResponse_responseText xhr), xhr)
       reqs = ffor decodes $ \case
-        (Right a, resp) -> ResponseSuccess a resp
-        (Left e,  resp) -> ResponseFailure e resp
+        (Right a, r) -> ResponseSuccess a r
+        (Left e,  r) -> ResponseFailure (T.pack e) r
   return $ leftmost [reqs, fmap RequestFailure badReq]
 
 note :: e -> Maybe a -> Either e a
@@ -282,16 +297,16 @@ note e = maybe (Left e) Right
 --                              , uriAuthority = Just $
 --                                  URIAuth { uriUserInfo = ""
 --                                          , uriRegName = reqHost
---                                          , uriPort = ":" ++ show reqPort
+--                                          , uriPort = ":" <> show reqPort
 --                                          }
---                              , uriPath = path ++ reqPath req
+--                              , uriPath = path <> reqPath req
 --                              }
 
 --         setrqb r = case reqBody req of
 --                      Nothing -> r
 --                      Just (b,t) -> r { requestBody = RequestBodyLBS b
 --                                      , requestHeaders = requestHeaders r
---                                                      ++ [(hContentType, cs . show $ t)] }
+--                                                      <> [(hContentType, cs . show $ t)] }
 --         setQS = setQueryString $ queryTextToQuery (qs req)
 --         setheaders r = r { requestHeaders = requestHeaders r
 --                                          <> fmap toProperHeader (headers req) }

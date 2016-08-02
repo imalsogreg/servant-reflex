@@ -1,6 +1,4 @@
-{ mkDerivation, exceptions, http-types, reflex, reflex-dom,
-  reflex-dom-contrib, servant
-}:
+{ mkDerivation, exceptions, http-types, reflex, reflex-dom, servant }:
 
 mkDerivation {
   pname = "servant-reflex";
@@ -13,7 +11,6 @@ mkDerivation {
     http-types
     reflex
     reflex-dom
-    reflex-dom-contrib
     servant
   ];
   license = null;

@@ -88,7 +88,7 @@ type API = "getint"  :> Get '[JSON] Int
                                                         (constDyn (BasePath "/"))
 ```
 
-These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Behavior t (Either String a)` values. You provide a trigger event and receive an `Event t (ReqResult a)`, with responses from the API server (which you would write with `servant-server`).
+These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Dynamic t (Either String a)` values. You provide a trigger event and receive an `Event t (ReqResult a)`, with responses from the API server (which you would write with `servant-server`).
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
@@ -97,18 +97,18 @@ These client functions are computed from the API and manage serialization, XhrRe
           -> m (Event t (ReqResult Int)) -- ^ Consume the answer
 
    sayhi :: MonadWidget t m
-         => Behavior t (Either String String) 
+         => Dynamic t (Either String String) 
             -- ^ One input parameter - the 'name'
-         -> Behavior t [String]
+         -> Dynamic t [String]
             -- ^ Another input: list of preferred greetings
-         -> Behavior t Bool
+         -> Dynamic t Bool
             -- ^ Flag for capitalizing the response
          -> Event t ()
             -- ^ Trigger the XHR Request
          -> m (Event t (ReqResult String))
 
    doubleit :: MonadWidget t m
-            => Behavior t (Either String Double)
+            => Dynamic t (Either String Double)
             -> Event t ()
             -> m (Event t (ReqResult Double))
 ```
@@ -142,15 +142,15 @@ This example builds some input fields to enter API parameters, buttons to trigge
     display =<< holdDyn (Just 0) serverInts
 
   elClass "div" "hello-demo" $ do
-    nameText <- (current . value) <$> textInput def
-    greetings <- (fmap words . current . value) <$> textInput def
+    nameText <- value <$> textInput def
+    greetings <- (fmap words . value) <$> textInput def
     withGusto <- checkbox def
     helloButton <- button "Say hi"
     hellos <- fmapMaybe resResult <$> sayhi nameText greetings withGusto helloButton
     display =<< holdDyn Nothing hellos
 
   elClass "div" "demo-double" $ do
-    inputDouble  <- (fmapMaybe readMaybe . current) <$> textInput def
+    inputDouble  <- (fmapMaybe readMaybe) <$> textInput def
     doubleButton <- button "Double it"
     outputDouble <- fmapMaybe resSuccess <$> doubleit inputDouble doubleButton
     display =<< holdDyn Nothing outputDouble

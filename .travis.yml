@@ -10,4 +10,4 @@ cache:
     - /nix
 os:
   - linux
-  - osx
+  # - osx  # TODO

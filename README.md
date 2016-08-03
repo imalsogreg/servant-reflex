@@ -2,6 +2,9 @@ Note: work in progress.
 
 # servant-reflex
 
+[![Build Status](https://travis-ci.org/imalsogreg/servant-reflex.svg?branch=dynamic)](https://travis-ci.org/imalsogreg/servant-reflex)
+
+
 This library lets you automatically derive [`reflex-dom`](https://github.com/reflex-frp/reflex-dom) clients that query each endpoint of a [`servant`](htps://github.com/haskell-servant/servant) webservice.
 
 ## Building the library and test server

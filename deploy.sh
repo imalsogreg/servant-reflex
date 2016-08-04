@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e # Exit with nonzero exit code if anything fails
 
 SOURCE_BRANCH="dynamic"
 TARGET_BRANCH="gh-pages"
-OUT=dist-newstyle/hpc
+OUT=dist/hpc
 
 function doCompile {
   ./runTestsAndCoverage.sh

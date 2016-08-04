@@ -1,21 +1,52 @@
 sudo: required
 
+before_cache:
+  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
+  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
+
+matrix:
+  include:
+    - env: CABALVER=1.24 GHCVER=7.10.3
+      compiler: ": #GHC 7.10.3"
+      addons: {apt: {packages: [cabal-install-1.24,ghc-7.10.3], sources: [hvr-ghc]}}
+    - env: CABALVER=1.24 GHCVER=8.0.1
+      compiler: ": #GHC 8.0.1"
+      addons: {apt: {packages: [cabal-install-1.24,ghc-8.0.1], sources: [hvr-ghc]}}
+
+
+
 before_install:
  - openssl aes-256-cbc -K $encrypted_3c89d919c82e_key -iv $encrypted_3c89d919c82e_iv -in deploy_key.enc -out deploy_key -d
+ - unset CC
+ - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+
+install:
+ - cabal --version
+ - BENCH=${BENCH---enable-benchmarks}
+ - TEST=${TEST---enable-tests}
+ - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+ - if [ -f $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz ];
+   then
+     zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz >
+          $HOME/.cabal/packages/hackage.haskell.org/00-index.tar;
+   fi
+ - travis_retry cabal update -v
+ - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
 
 script:
 - git config --global user.email "travis-ci@example.com"
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
 - cd deps/reflex-platform
-- ./try-reflex --command "cd ../.. && cabal configure --enable-tests && cabal build && ./deploy.sh"
-
-# - deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
-# - bash ./deploy.sh
+- deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
+- bash ./deploy.sh
 
 cache:
   directories:
   - /nix
+  - $HOME/.cabal/packages
+  - $HOME/.cabal/store
+
 os:
 - linux
 

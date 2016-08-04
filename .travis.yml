@@ -8,10 +8,7 @@ script:
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
 - cd deps/reflex-platform
-- ./try-reflex
-- cd ../..
-- cabal configure --enable-tests && cabal build
-- bash ./deploy
+- ./try-reflex --command "cd ../.. && cabal configure --enable-tests && cabal build && ./deploy.sh"
 
 # - deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
 # - bash ./deploy.sh

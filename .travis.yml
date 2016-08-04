@@ -37,7 +37,6 @@ script:
 - git config --global user.email "travis-ci@example.com"
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
-- cd deps/reflex-platform
 - deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
 - bash ./deploy.sh
 

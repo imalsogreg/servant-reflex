@@ -46,9 +46,6 @@ cache:
   - $HOME/.cabal/packages
   - $HOME/.cabal/store
 
-os:
-- linux
-
 env:
   global:
     - ENCRYPTION_LABEL: "3c89d919c82e"

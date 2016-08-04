@@ -53,3 +53,12 @@ executable example
   main-is: Example.hs
   other-modules: API
   hs-source-dirs: exec
+
+test-suite testsuite
+  type: exitcode-stdio-1.0
+  main-is: Tests.hs
+  hs-source-dirs: test
+  ghc-prof-options: -prof -auto
+  ghc-options: -Wall -fwarn-tabs -O2 -fhpc -threaded
+  other-modules:
+  build-depends: base

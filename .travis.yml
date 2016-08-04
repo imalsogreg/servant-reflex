@@ -1,13 +1,22 @@
 sudo: required
+
+before_install:
+ - openssl aes-256-cbc -K $encrypted_3c89d919c82e_key -iv $encrypted_3c89d919c82e_iv -in deploy_key.enc -out ~\/deploy_key -d
+
 script:
-  - git config --global user.email "travis-ci@example.com"
-  - git config --global user.name "Travis-CI"
-  - git submodule update --init --recursive
-  - deps/reflex-platform/work-on ghcjs ./. --command "cabal configure --ghcjs && cabal build" # ./try-reflex --command "exit 0"
-  # - travis_wait ./test -j 2
+- git config --global user.email "travis-ci@example.com"
+- git config --global user.name "Travis-CI"
+- git submodule update --init --recursive
+- deps/reflex-platform/work-on ghcjs ./. --command "cabal configure --ghcjs && cabal build"
+- deps/reflex-platform/work-on ghcjs ./. --command "./deploy.sh"
+
 cache:
   directories:
-    - /nix
+  - /nix
 os:
-  - linux
-  # - osx  # TODO
+- linux
+
+env:
+  global:
+    - ENCRYPTION_LABEL: "3c89d919c82e"
+    - COMMIT_AUTHOR_EMAIL: "imalsogreg@gmail.com"

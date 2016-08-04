@@ -16,3 +16,6 @@
 [submodule "deps/reflex-dom-contrib"]
 	path = deps/reflex-dom-contrib
 	url = https://github.com/reflex-frp/reflex-dom-contrib
+[submodule "deps/ghcjs-dom"]
+	path = deps/ghcjs-dom
+	url = https://github.com/ghcjs/ghcjs-dom

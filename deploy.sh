@@ -4,7 +4,7 @@ set -e # Exit with nonzero exit code if anything fails
 
 SOURCE_BRANCH="dynamic"
 TARGET_BRANCH="gh-pages"
-OUT=dist/hpc
+OUT=out
 
 function doCompile {
   ./runTestsAndCoverage.sh

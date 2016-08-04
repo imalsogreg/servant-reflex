@@ -42,7 +42,10 @@ done
 # TODO - actually send results to /dev/null when hpc kinks are fully removed
 hpc markup $EXCL --destdir=$DIR testsuite # >/dev/null 2>&1
 
+cp -r $DIR out/
+
 cat <<EOF
+
 
 Test coverage report written to $HTMLDIR.
 EOF

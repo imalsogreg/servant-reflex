@@ -7,8 +7,14 @@ script:
 - git config --global user.email "travis-ci@example.com"
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
-- deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
-- bash ./deploy.sh
+- cd deps/reflex-platform
+- ./try-reflex
+- cd ../..
+- cabal configure --enable-tests && cabal build
+- bash ./deploy
+
+# - deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
+# - bash ./deploy.sh
 
 cache:
   directories:

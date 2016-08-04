@@ -43,7 +43,7 @@ library
   if impl(ghcjs)
       build-depends: ghcjs-base >= 0.2 && < 0.3
 
-  ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
   default-language: Haskell2010
 
@@ -58,7 +58,8 @@ test-suite testsuite
   type: exitcode-stdio-1.0
   main-is: Tests.hs
   hs-source-dirs: test
-  ghc-prof-options: -prof -auto
+  ghc-prof-options: -auto
   ghc-options: -Wall -fwarn-tabs -O2 -fhpc -threaded
   other-modules:
+  default-language: Haskell2010
   build-depends: base

@@ -189,7 +189,12 @@ performRequest reqMeth req reqHost trigger = do
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 
+#ifndef ghcjs_HOST_OS
+  resps <- performRequestAsync (fmap LT.toStrict <$> okReqs)
+#else
   resps <- performRequestAsync (fmap LT.unpack <$> okReqs)
+#endif
+
   return (resps, badReqs)
 
   -- let oneNamedPair :: String -> [QueryPart] -> String

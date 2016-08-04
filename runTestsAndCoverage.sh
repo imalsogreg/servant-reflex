@@ -3,9 +3,11 @@
 set -e
 
 # All directory variables relative to project root
-DIR=dist-newstyle/hpc
+# DIR=dist-newstyle/hpc
+DIR=dist/hpc
 
-SUITE=./dist-newstyle/build/servant-reflex-0.2/build/testsuite/testsuite
+#SUITE=./dist-newstyle/build/servant-reflex-0.2/build/testsuite/testsuite
+SUITE=./dist/build/testsuite/testsuite
 
 if [ -z "$DEBUG" ]; then
     export DEBUG=snap-testsuite

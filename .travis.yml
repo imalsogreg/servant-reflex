@@ -1,7 +1,7 @@
 sudo: required
 
 before_install:
- - openssl aes-256-cbc -K $encrypted_3c89d919c82e_key -iv $encrypted_3c89d919c82e_iv -in deploy_key.enc -out ~\/deploy_key -d
+ - openssl aes-256-cbc -K $encrypted_3c89d919c82e_key -iv $encrypted_3c89d919c82e_iv -in deploy_key.enc -out deploy_key -d
 
 script:
 - git config --global user.email "travis-ci@example.com"

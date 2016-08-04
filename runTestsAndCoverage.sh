@@ -4,7 +4,7 @@ set -e
 
 # All directory variables relative to project root
 # DIR=dist-newstyle/hpc
-DIR=dist/hpc
+DIR=./dist/hpc
 
 #SUITE=./dist-newstyle/build/servant-reflex-0.2/build/testsuite/testsuite
 SUITE=./dist/build/testsuite/testsuite
@@ -40,7 +40,15 @@ for m in $EXCLUDES; do
 done
 
 # TODO - actually send results to /dev/null when hpc kinks are fully removed
+echo "Call hpc:"
+echo hpc markup $EXCL --destdir=$DIR testsuite # >/dev/null 2>&1
 hpc markup $EXCL --destdir=$DIR testsuite # >/dev/null 2>&1
+
+echo "ls $DIR:"
+ls $DIR
+
+echo "ls:"
+ls
 
 cp -r $DIR out/
 

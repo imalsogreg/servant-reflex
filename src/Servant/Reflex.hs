@@ -186,14 +186,10 @@ instance (KnownSymbol sym, ToHttpApiData a,
   type Client t m (Header sym a :> sublayout) =
     Behavior t (Either String a) -> Client t m sublayout
 
-  clientWithRoute Proxy q req baseurl mval =
+  clientWithRoute Proxy q req baseurl eitherVal =
     clientWithRoute (Proxy :: Proxy sublayout)
                     q
-                    req
-                    -- (maybe req -- TODO Need to pass the header in
-                    --        (\value -> Servant.Common.Req.addHeader hname value req)
-                    --        mval
-                    -- )
+                    (Servant.Common.Req.addHeader hname eitherVal req)
                     baseurl
 
     where hname = symbolVal (Proxy :: Proxy sym)

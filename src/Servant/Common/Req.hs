@@ -68,7 +68,7 @@ data Req t = Req
   , qParams      :: [(String, QueryPart t)]
   , reqBody      :: Maybe (Behavior t (Either String (BL.ByteString, String)))
   -- , reqAccept    :: [MediaType]  -- TODO ?
-  , headers      :: [(String, Behavior t String)]
+  , headers      :: [(String, Behavior t (Either String String))]
   , authData     :: Maybe (Behavior t (Maybe BasicAuthData))
   }
 
@@ -80,10 +80,7 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => String -> Behavior t (Either String a) -> Req t -> Req t
-addHeader name val req = req { headers = headers req
-                                         ++ [(name, fmap (unpack . toHeader) val)]
---                                      ++ [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
-                             }
+addHeader name val req = req { headers = (name, (fmap . fmap) (unpack . toHeader) val) : headers req }
 
 -- * performing requests
 
@@ -140,20 +137,26 @@ performRequest reqMethod req reqHost trigger = do
           x </> y | ("/" `L.isSuffixOf` x) || ("/" `L.isPrefixOf` y) = x ++ y
                   | otherwise = x ++ '/':y
 
-      xhrHeaders :: Behavior t [(String, String)]
-      xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
+      xhrHeaders :: Behavior t (Either String [(String, String)])
+      xhrHeaders = (fmap sequence . sequence . fmap f . headers) req
+        where
+          f = \(headerName, behavior) ->
+                fmap (fmap (\rightVal -> (headerName, rightVal))) behavior
 
-      mkConfigBody :: [(String,String)] -> (Either String (BL.ByteString, String)) -> Either String XhrRequestConfig
-      mkConfigBody hs rb = case rb of
-                  Left e               -> Left e
-                  (Right (bBytes, bCT)) ->
+      mkConfigBody :: Either String [(String,String)] -> (Either String (BL.ByteString, String)) -> Either String XhrRequestConfig
+      mkConfigBody ehs rb = case (ehs, rb) of
+                  (_, Left e)                     -> Left e
+                  (Left e, _)                     -> Left e
+                  (Right hs, Right (bBytes, bCT)) ->
                     Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
                                 , _xhrRequestConfig_headers  =
-                                    Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
+                                    Map.insert "Content-Type" bCT (Map.fromList hs)}
 
       xhrOpts :: Behavior t (Either String XhrRequestConfig)
       xhrOpts = case reqBody req of
-        Nothing    -> fmap (\h -> Right $ def { _xhrRequestConfig_headers = Map.fromList h }) xhrHeaders
+        Nothing    -> fmap (\ehs -> case ehs of
+                               Left e -> Left e
+                               Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs }) xhrHeaders
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
       mkAuth :: Maybe BasicAuthData -> Either String XhrRequestConfig -> Either String XhrRequestConfig

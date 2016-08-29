@@ -178,14 +178,10 @@ instance (KnownSymbol sym, ToHttpApiData a,
   type Client t m (Header sym a :> sublayout) =
     Dynamic t (Either Text a) -> Client t m sublayout
 
-  clientWithRoute Proxy q req baseurl _ =
+  clientWithRoute Proxy q req baseurl eVal =
     clientWithRoute (Proxy :: Proxy sublayout)
                     q
-                    req
-                    -- (maybe req -- TODO Need to pass the header in
-                    --        (\value -> Servant.Common.Req.addHeader hname value req)
-                    --        mval
-                    -- )
+                    (Servant.Common.Req.addHeader hname eVal req)
                     baseurl
 
 -- | Using a 'HttpVersion' combinator in your API doesn't affect the client

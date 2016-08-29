@@ -8,42 +8,27 @@
 {-# LANGUAGE TupleSections       #-}
 module Servant.Common.Req where
 
-import Control.Applicative (liftA2, liftA3)
+-------------------------------------------------------------------------------
+import           Control.Applicative (liftA2, liftA3)
 import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.Map as Map
 import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy.Encoding as LTE
--- import qualified Data.Foldable as F
+import           Data.Proxy (Proxy(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy.Encoding as LTE
 import qualified Data.Text.Lazy as LT
-import Data.Proxy
-import qualified Data.Text as T
-import qualified Data.Map as Map
--- import Data.Monoid
--- import Data.String
--- import Data.String.Conversions
--- import Data.Proxy
--- import Data.Text (Text)
--- import Data.Text.Encoding
--- import Data.Typeable
--- import Network.HTTP.Client hiding (Proxy, path)
--- import Network.HTTP.Media
--- import Network.HTTP.Types
--- import qualified Network.HTTP.Types.Header   as HTTP
--- import Network.URI hiding (path)
--- import Servant.API.ContentTypes
-import Servant.Common.BaseUrl
-import Servant.API.ContentTypes
-import Reflex
-import Reflex.Dom
+import           Reflex
+import           Reflex.Dom
+import           Servant.Common.BaseUrl
+import           Servant.API.ContentTypes
+import           Web.HttpApiData
+-------------------------------------------------------------------------------
+import           Servant.API.BasicAuth
 
-import Servant.API.BasicAuth
 
--- import qualified Network.HTTP.Client as Client
-
-import Web.HttpApiData
 
 data ReqResult a = ResponseSuccess a XhrResponse
                  | ResponseFailure Text XhrResponse
@@ -80,8 +65,7 @@ data Req t = Req
   , reqPathParts :: [Dynamic t (Either Text Text)]
   , qParams      :: [(Text, QueryPart t)]
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
-  -- , reqAccept    :: [MediaType]  -- TODO ?
-  , headers      :: [(Text, Dynamic t Text)]
+  , headers      :: [(Text, Dynamic t (Either Text Text))]
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
@@ -93,10 +77,8 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = headers req
-                                         <> [(name, fmap (TE.decodeUtf8 . toHeader) val)]
---                                      <> [(name, (fmap . fmap) (decodeUtf8 . toHeader) val)]
-                             }
+addHeader name val req = req { headers = (name, (fmap . fmap) (unpack . toHeader) val) : headers req }
+
 
 -- * performing requests
 
@@ -114,7 +96,6 @@ performRequest :: forall t m.MonadWidget t m
                --                            , [HTTP.Header], Response ByteString)
 performRequest reqMeth req reqHost trigger = do
 
-  -- Ridiculous functor-juggling! How to clean this up?
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -154,21 +135,29 @@ performRequest reqMeth req reqHost trigger = do
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
                   | otherwise = x <> "/" <> y
 
-      xhrHeaders :: Dynamic t [(Text, Text)]
-      xhrHeaders = sequence $ ffor (headers req) $ \(hName, hVal) -> fmap (hName,) hVal
 
-      mkConfigBody :: [(Text,Text)] -> (Either Text (BL.ByteString, Text)) -> Either Text (XhrRequestConfig LT.Text)
-      mkConfigBody _ rb = case rb of
-                  Left e               -> Left e
-                  (Right (bBytes, bCT)) ->
-                    Right $ def { _xhrRequestConfig_sendData = LTE.decodeUtf8 bBytes
+      xhrHeaders :: Dynamic t (Either Text [(Text, Text)])
+      xhrHeaders = (fmap sequence . sequence . fmap f . headers) req
+        where
+          f = \(headerName, dynam) ->
+                fmap (fmap (\rightVal -> (headerName, rightVal))) dynam
+
+      mkConfigBody :: Either Text [(Text,Text)]
+                   -> (Either Text (BL.ByteString, Text))
+                   -> Either Text XhrRequestConfig
+      mkConfigBody ehs rb = case (ehs, rb) of
+                  (_, Left e)                     -> Left e
+                  (Left e, _)                     -> Left e
+                  (Right hs, Right (bBytes, bCT)) ->
+                    Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
                                 , _xhrRequestConfig_headers  =
-                                    Map.insert "Content-Type" bCT (_xhrRequestConfig_headers def)}
+                                    Map.insert "Content-Type" bCT (Map.fromList hs)}
 
       xhrOpts :: Dynamic t (Either Text (XhrRequestConfig LT.Text))
       xhrOpts = case reqBody req of
-        Nothing    -> fmap (\h -> Right $ XhrRequestConfig
-                        (Map.fromList h) Nothing Nothing Nothing "") xhrHeaders
+        Nothing    -> ffor xhrHeaders $ \case
+                               Left e -> Left e
+                               Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs }
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
       mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
@@ -178,7 +167,8 @@ performRequest reqMeth req reqHost trigger = do
         { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
         , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
-      addAuth :: Dynamic t (Either Text (XhrRequestConfig x)) -> Dynamic t (Either Text (XhrRequestConfig x))
+      addAuth :: Dynamic t (Either Text (XhrRequestConfig x))
+              -> Dynamic t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
         Nothing -> xhr
         Just auth -> liftA2 mkAuth auth xhr
@@ -197,21 +187,6 @@ performRequest reqMeth req reqHost trigger = do
 
   return (resps, badReqs)
 
-  -- let oneNamedPair :: String -> [QueryPart] -> String
-  --     oneNamedPair pName ps =
-  --       T.intercalate "&" $ ffor ps $ \case
-  --         QueryPartParam pval -> pName <> "=" <> pval
-  --         QueryPartFlag True  -> pName
-  --         QueryPartFlag False -> error "Impossible case"
-
-  --     t' :: [Behavior t String]
-  --     t' = map (\(pName, pVals) -> fmap (oneNamedPair pName) pVals)
-  --           (qParams req)
-
-  --     queryString :: Behavior t String
-  --     queryString = fmap (T.intercalate "&") (sequence t')
-
-  --     xhrUrl = (liftA2 . liftA2) (\u q -> u <> '?' : q) urlPath (fmap Just queryString)
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
@@ -240,83 +215,3 @@ performRequestCT ct reqMeth req reqHost trigger = do
 
 note :: e -> Maybe a -> Either e a
 note e = maybe (Left e) Right
-
-
-  -- partialRequest <- liftIO $ reqToRequest req reqHost
-
-  -- let request = partialRequest { Client.method = reqMethod
-  --                              , checkStatus = \ _status _headers _cookies -> Nothing
-  -- , qs           :: QueryText
-  -- , qs           :: QueryText
-  --                              }
-
-  -- eResponse <- liftIO $ catchConnectionError $ Client.httpLbs request manager
-  -- case eResponse of
-  --   Left err ->
-  --     throwE . ConnectionError $ SomeException err
-
-  --   Right response -> do
-  --     let status = Client.responseStatus response
-  --         body = Client.responseBody response
-  --         hdrs = Client.responseHeaders response
-  --         status_code = statusCode status
-  --     ct <- case lookup "Content-Type" $ Client.responseHeaders response of
-  --                Nothing -> pure $ "application/octet-stream"
-  --                Just t -> case parseAccept t of
-  --                  Nothing -> throwE $ InvalidContentTypeHeader (cs t) body
-  --                  Just t' -> pure t'
-  --     unless (status_code >= 200 && status_code < 300) $
-  --       throwE $ FailureResponse status ct body
-  --     return (status_code, body, ct, hdrs, response)
-
-
--- TODO implement
--- performRequestCT :: (MimeUnrender ct result, Reflex t) =>
---   Proxy ct -> String -> Req t -> BaseUrl -> Event t ()
---     -> m (Event t (Maybe result, XhrResponse)) -- ExceptT ServantError IO ([HTTP.Header], result)
--- performRequestCT ct reqMethod req reqHost = do
---   let acceptCT = contentType ct
---   (_status, respBody, respCT, hdrs, _response) <-
---     performRequest reqMethod (req { reqAccept = [acceptCT] }) reqHost manager
---   unless (matches respCT (acceptCT)) $ throwE $ UnsupportedContentType respCT respBody
---   case mimeUnrender ct respBody of
---     Left err -> throwE $ DecodeFailure err respCT respBody
---     Right val -> return (hdrs, val)
-
--- catchConnectionError :: IO a -> IO (Either ServantError a)
--- catchConnectionError action =
---   catch (Right <$> action) $ \e ->
---     pure . Left . ConnectionError $ SomeException (e :: HttpException)
-
--- setRQBody :: ByteString -> String -> Req -> Req
--- setRQBody b t req = req { reqBody = Just (b, t) }
-
--- TODO: Helpful soon!
--- reqToRequest :: (Reflex t, Functor m, MonadThrow m) => Req t -> BaseUrl -> m Request
--- reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
---     setheaders . setAccept . setrqb . setQS <$> parseUrl url
-
---   where url = show $ nullURI { uriScheme = case reqScheme of
---                                   Http  -> "http:"
---                                   Https -> "https:"
---                              , uriAuthority = Just $
---                                  URIAuth { uriUserInfo = ""
---                                          , uriRegName = reqHost
---                                          , uriPort = ":" <> show reqPort
---                                          }
---                              , uriPath = path <> reqPath req
---                              }
-
---         setrqb r = case reqBody req of
---                      Nothing -> r
---                      Just (b,t) -> r { requestBody = RequestBodyLBS b
---                                      , requestHeaders = requestHeaders r
---                                                      <> [(hContentType, cs . show $ t)] }
---         setQS = setQueryString $ queryTextToQuery (qs req)
---         setheaders r = r { requestHeaders = requestHeaders r
---                                          <> fmap toProperHeader (headers req) }
---         setAccept r = r { requestHeaders = filter ((/= "Accept") . fst) (requestHeaders r)
---                                         <> [("Accept", renderHeader $ reqAccept req)
---                                               | not . null . reqAccept $ req] }
---         toProperHeader (name, val) =
---           (fromString name, encodeUtf8 val)

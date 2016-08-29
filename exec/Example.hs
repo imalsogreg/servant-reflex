@@ -32,7 +32,7 @@ run = do
   -- (alternatively we could just `let url = constDyn (BasePath "/")`)
   url <- baseUrlWidget
   el "br" (return ())
-  dynText =<< mapDyn showBaseUrl url
+  dynText $ showBaseUrl <$> url
   el "br" (return ())
 
   -- Name the computed API client functions
@@ -95,11 +95,12 @@ run = do
     dynText =<< holdDyn "No res yet" (fmap tShow $ fmapMaybe reqSuccess $ multiResp)
 
 showXhrResponse :: XhrResponse -> Text
-showXhrResponse (XhrResponse stat stattxt rbmay rtmay) =
+showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =
   T.unlines ["stat: " <> tShow stat
             ,"stattxt: " <> tShow stattxt
             ,"resp: " <> maybe "" showRB rbmay
-            ,"rtext: " <> tShow rtmay]
+            ,"rtext: " <> tShow rtmay
+            ,"rHeaders: " <> tShow respHeaders]
 
 tShow :: Show a => a -> Text
 tShow = T.pack . show

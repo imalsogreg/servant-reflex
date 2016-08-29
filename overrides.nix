@@ -1,8 +1,13 @@
 { reflex-platform, ... }:
-let 
-  pkgs = import <nixpkgs> {};
-  reflex-platform = import deps/reflex-platform {};
-in reflex-platform.ghcjs.override {
-  overrides = self: super: {
+let
+
+  nixpkgs = (import <nixpkgs> {});
+  dontCheck = nixpkgs.pkgs.haskell.lib.dontCheck;
+  cabal2nixResult = reflex-platform.cabal2nixResult;
+
+in
+reflex-platform.ghcjs.override {
+  overrides = self: super: { 
+     reflex-dom  = dontCheck (self.callPackage deps/reflex-dom {});
   };
 }

@@ -18,8 +18,6 @@ import           Data.Proxy (Proxy(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy.Encoding as LTE
-import qualified Data.Text.Lazy as LT
 import           Reflex
 import           Reflex.Dom
 import           Servant.Common.BaseUrl
@@ -69,15 +67,15 @@ data Req t = Req
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
-defReq :: Reflex t => Req t
+defReq :: Req t
 defReq = Req "GET" [] [] Nothing [] Nothing
 
-prependToPathParts :: Reflex t => Dynamic t (Either Text Text) -> Req t -> Req t
+prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = (name, (fmap . fmap) toHeader val) : headers req }
+addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
 -- * performing requests
@@ -144,26 +142,33 @@ performRequest reqMeth req reqHost trigger = do
 
       mkConfigBody :: Either Text [(Text,Text)]
                    -> (Either Text (BL.ByteString, Text))
-                   -> Either Text (XhrRequestConfig LT.Text)
+                   -> Either Text (XhrRequestConfig XhrPayload)
       mkConfigBody ehs rb = case (ehs, rb) of
                   (_, Left e)                     -> Left e
                   (Left e, _)                     -> Left e
                   (Right hs, Right (bBytes, bCT)) ->
                     Right $ XhrRequestConfig
-                      { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                      { _xhrRequestConfig_sendData = bytesToPayload bBytes
                       , _xhrRequestConfig_headers  =
                                     Map.insert "Content-Type" bCT (Map.fromList hs)
+                      , _xhrRequestConfig_user = Nothing
                       , _xhrRequestConfig_password = Nothing
                       , _xhrRequestConfig_responseType = Nothing
                       , _xhrRequestConfig_withCredentials = False
                       , _xhrRequestConfig_responseHeaders = def
                       }
 
-      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig LT.Text))
+      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig XhrPayload))
       xhrOpts = case reqBody req of
         Nothing    -> ffor xhrHeaders $ \case
                                Left e -> Left e
-                               Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs }
+                               Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
+                                                       , _xhrRequestConfig_user = Nothing
+                                                       , _xhrRequestConfig_password = Nothing
+                                                       , _xhrRequestConfig_responseType = Nothing
+                                                       , _xhrRequestConfig_sendData = ""
+                                                       , _xhrRequestConfig_withCredentials = False
+                                                       }
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
       mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
@@ -181,18 +186,23 @@ performRequest reqMeth req reqHost trigger = do
 
       xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
-  let reqs    = tagDyn xhrReq trigger
+  let reqs    = tagPromptlyDyn xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
 
-#ifndef ghcjs_HOST_OS
-  resps <- performRequestAsync (fmap LT.toStrict <$> okReqs)
-#else
-  resps <- performRequestAsync (fmap LT.unpack <$> okReqs)
-#endif
+  resps <- performRequestAsync okReqs
 
   return (resps, badReqs)
 
+#ifdef ghcjs_HOST_OS
+type XhrPayload = String
+bytesToPayload :: BL.ByteString -> XhrPayload
+bytesToPayload = BL.unpack
+#else
+type XhrPayload = T.Text
+bytesToPayload :: BL.ByteString -> XhrPayload
+bytesToPayload = T.pack . BL.unpack
+#endif
 
 -- TODO implement
 -- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]

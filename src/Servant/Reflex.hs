@@ -51,7 +51,7 @@ import           Reflex.Dom
 --               -> m (Event t (Either XhrError (Book,Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
-client :: (HasClient t m layout, MonadWidget t m)
+client :: (HasClient t m layout)
        => Proxy layout -> Proxy m -> Dynamic t BaseUrl -> Client t m layout
 client p q baseurl = clientWithRoute p q defReq baseurl
 
@@ -80,7 +80,7 @@ instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
-instance (MonadWidget t m, KnownSymbol capture, ToHttpApiData a, HasClient t m sublayout)
+instance (MonadWidget t m, ToHttpApiData a, HasClient t m sublayout)
       => HasClient t m (Capture capture a :> sublayout) where
 
   type Client t m (Capture capture a :> sublayout) =
@@ -183,6 +183,7 @@ instance (KnownSymbol sym, ToHttpApiData a,
                     q
                     (Servant.Common.Req.addHeader hname eVal req)
                     baseurl
+    where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
 
 -- | Using a 'HttpVersion' combinator in your API doesn't affect the client
 -- functions.
@@ -337,7 +338,7 @@ instance (MonadWidget t m) => HasClient t m Raw where
                                             <> _xhrRequest_url jx})
                  xhrs
                  (showBaseUrl <$> baseurl)
-        reqs   = tagDyn xhrs' triggers
+        reqs   = tagPromptlyDyn xhrs' triggers
         okReq  = fmapMaybe hush reqs
         badReq = fmapMaybe tattle reqs
     resps <- performRequestAsync okReq
@@ -382,7 +383,6 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
        where req'        = req { reqBody = bodyBytesCT }
              ctProxy     = Proxy :: Proxy ct
              ctString    = T.pack $ show $ contentType ctProxy
-             --ctString    = decodeUtf8 . CI.original . M.mainType $ contentType ctProxy
              bodyBytesCT = Just $ (fmap . fmap)
                              (\b -> (mimeRender ctProxy b, ctString))
                              body

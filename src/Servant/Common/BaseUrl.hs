@@ -15,7 +15,8 @@ module Servant.Common.BaseUrl (
   , showBaseUrl
 ) where
 
-import           Data.Monoid
+import           Control.Monad (join)
+import           Data.Monoid ((<>))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           GHC.Generics
@@ -60,17 +61,17 @@ showBaseUrl (BaseFullUrl urlscheme host port path) =
 baseUrlWidget :: forall t m .MonadWidget t m => m (Dynamic t BaseUrl)
 baseUrlWidget = elClass "div" "base-url" $ do
   urlWidget <- dropdown (0 :: Int) (constDyn $ 0 =: "BasePath" <> 1 =: "BaseUrlFull") def
-  bUrlWidget <- forDyn (value urlWidget) $ \i -> case i of
-    0 -> pathWidget
-    1 -> fullUrlWidget
-    _ -> error "Surprising value"
-  joinDyn <$> widgetHold pathWidget (updated bUrlWidget)
+  let bUrlWidget = ffor (value urlWidget) $ \i -> case i of
+        0 -> pathWidget
+        1 -> fullUrlWidget
+        _ -> error "Surprising value"
+  join <$> widgetHold pathWidget (updated bUrlWidget)
   where pathWidget :: m (Dynamic t BaseUrl)
         pathWidget = do
           text "Url base path"
           t <- textInput (def {_textInputConfig_attributes =
                           constDyn ("placeholder" =: "/a/b")})
-          mapDyn BasePath (value t)
+          return $ BasePath <$> value t
         fullUrlWidget :: m (Dynamic t BaseUrl)
         fullUrlWidget = do
           schm <- dropdown Https (constDyn $ Https =: "https" <> Http =: "http") def
@@ -79,9 +80,4 @@ baseUrlWidget = elClass "div" "base-url" $ do
           prt  <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "80"}
           port :: Dynamic t Int <- holdDyn 80 (fmapMaybe (readMaybe . T.unpack) $ updated (value prt))
           path <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "a/b" }
-          BaseFullUrl `mapDyn` value schm `myApDyn` value srv `myApDyn` port `myApDyn` value path
-
-myApDyn :: MonadWidget t m => m (Dynamic t (a -> b)) -> Dynamic t a -> m (Dynamic t b)
-myApDyn f' a = do
-  f <- f'
-  combineDyn ($) f a
+          return $ BaseFullUrl <$> value schm <*> value srv <*> port <*> value path

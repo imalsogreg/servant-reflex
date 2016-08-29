@@ -1,21 +1,15 @@
 [submodule "deps/servant-snap"]
 	path = deps/servant-snap
-	url = https://github.com/haskell-servant/servant-snap
+	url = https://github.com/haskell-servant/servant-snap.git
 [submodule "deps/reflex-dom"]
 	path = deps/reflex-dom
-	url = https://github.com/ryantrinkle/reflex-dom
+	url = https://github.com/reflex-frp/reflex-dom.git
 [submodule "deps/reflex"]
 	path = deps/reflex
-	url = https://github.com/ryantrinkle/reflex
+	url = https://github.com/reflex-frp/reflex.git
 [submodule "deps/reflex-platform"]
 	path = deps/reflex-platform
 	url = https://github.com/reflex-frp/reflex-platform.git
-[submodule "deps/servant"]
-	path = deps/servant
-	url = https://github.com/haskell-servant/servant
 [submodule "deps/reflex-dom-contrib"]
 	path = deps/reflex-dom-contrib
 	url = https://github.com/reflex-frp/reflex-dom-contrib
-[submodule "deps/ghcjs-dom"]
-	path = deps/ghcjs-dom
-	url = https://github.com/ghcjs/ghcjs-dom

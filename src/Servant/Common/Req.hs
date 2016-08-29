@@ -77,7 +77,7 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = (name, (fmap . fmap) (unpack . toHeader) val) : headers req }
+addHeader name val req = req { headers = (name, (fmap . fmap) toHeader val) : headers req }
 
 
 -- * performing requests
@@ -144,14 +144,20 @@ performRequest reqMeth req reqHost trigger = do
 
       mkConfigBody :: Either Text [(Text,Text)]
                    -> (Either Text (BL.ByteString, Text))
-                   -> Either Text XhrRequestConfig
+                   -> Either Text (XhrRequestConfig LT.Text)
       mkConfigBody ehs rb = case (ehs, rb) of
                   (_, Left e)                     -> Left e
                   (Left e, _)                     -> Left e
                   (Right hs, Right (bBytes, bCT)) ->
-                    Right $ def { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
-                                , _xhrRequestConfig_headers  =
-                                    Map.insert "Content-Type" bCT (Map.fromList hs)}
+                    Right $ XhrRequestConfig
+                      { _xhrRequestConfig_sendData = Just (BL.unpack bBytes)
+                      , _xhrRequestConfig_headers  =
+                                    Map.insert "Content-Type" bCT (Map.fromList hs)
+                      , _xhrRequestConfig_password = Nothing
+                      , _xhrRequestConfig_responseType = Nothing
+                      , _xhrRequestConfig_withCredentials = False
+                      , _xhrRequestConfig_responseHeaders = def
+                      }
 
       xhrOpts :: Dynamic t (Either Text (XhrRequestConfig LT.Text))
       xhrOpts = case reqBody req of

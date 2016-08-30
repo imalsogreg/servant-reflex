@@ -8,7 +8,8 @@ module Main where
 
 import Data.Bool
 import Data.Maybe
-import Data.Monoid
+import Control.Monad.Fix (MonadFix)
+import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Servant.API
@@ -25,7 +26,12 @@ main :: IO ()
 main = mainWidget run
 
 
-run :: forall t m. MonadWidget t m => m ()
+run :: forall t m. (SupportsServantReflex t m,
+                    DomBuilder t m,
+                    DomBuilderSpace m ~ GhcjsDomSpace,
+                    MonadFix m,
+                    PostBuild t m,
+                    MonadHold t m) => m ()
 run = do
 
   -- Allow user to choose the url target for the request
@@ -110,3 +116,6 @@ showRB (XhrResponseBody_Default t) = tShow t
 showRB (XhrResponseBody_Text t) = tShow t
 showRB (XhrResponseBody_Blob t) = "<Blob>"
 showRB (XhrResponseBody_ArrayBuffer t) = tShow t
+
+note :: e -> Maybe a -> Either e a
+note e = maybe (Left e) Right

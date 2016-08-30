@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -13,9 +14,14 @@ module Servant.Common.BaseUrl (
   -- * functions
   , baseUrlWidget
   , showBaseUrl
+
+  -- * constraints
+  , SupportsServantReflex
 ) where
 
 import           Control.Monad (join)
+import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad.Fix (MonadFix)
 import           Data.Monoid ((<>))
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -23,6 +29,9 @@ import           GHC.Generics
 import           Reflex
 import           Reflex.Dom
 import           Text.Read
+
+
+type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, HasWebView (Performable m), MonadIO (Performable m))
 
 -- | URI scheme to use
 data Scheme =
@@ -58,7 +67,13 @@ showBaseUrl (BaseFullUrl urlscheme host port path) =
         (Https, 443) -> ""
         _ -> ":" <> T.pack (show port)
 
-baseUrlWidget :: forall t m .MonadWidget t m => m (Dynamic t BaseUrl)
+baseUrlWidget :: forall t m .(SupportsServantReflex t m,
+                              DomBuilderSpace m ~ GhcjsDomSpace,
+                              MonadFix m,
+                              PostBuild t m,
+                              MonadHold t m,
+                              DomBuilder t m)
+              => m (Dynamic t BaseUrl)
 baseUrlWidget = elClass "div" "base-url" $ do
   urlWidget <- dropdown (0 :: Int) (constDyn $ 0 =: "BasePath" <> 1 =: "BaseUrlFull") def
   let bUrlWidget = ffor (value urlWidget) $ \i -> case i of

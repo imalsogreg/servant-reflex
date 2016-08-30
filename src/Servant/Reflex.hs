@@ -23,22 +23,43 @@ module Servant.Reflex
   , module Servant.Common.BaseUrl
   ) where
 
+-------------------------------------------------------------------------------
 import           Control.Applicative
+import           Data.Monoid             ((<>))
 import qualified Data.Set                as Set
 import qualified Data.Text.Encoding      as E
 import           Data.CaseInsensitive    (mk)
-import           Data.Proxy
-import           Data.String.Conversions
+import           Data.Proxy              (Proxy (..))
 import qualified Data.Map                as Map
 import           Data.Text               (Text)
 import qualified Data.Text               as T
-import           Data.Text.Encoding
-import           GHC.TypeLits
-import           Servant.API
-import           Servant.Common.BaseUrl
-import           Servant.Common.Req
-import           Reflex
-import           Reflex.Dom
+import           GHC.TypeLits            (KnownSymbol, symbolVal)
+import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
+                                          BasicAuthData, BuildHeadersTo(..),
+                                          Capture, contentType, Header,
+                                          Headers(..), HttpVersion, IsSecure,
+                                          MimeRender(..), MimeUnrender,
+                                          NoContent, QueryFlag, QueryParam,
+                                          QueryParams, Raw, ReflectMethod(..),
+                                          RemoteHost, ReqBody,
+                                          ToHttpApiData(..), Vault, Verb)
+import           Servant.Common.BaseUrl  (BaseUrl, baseUrlWidget, showBaseUrl,
+                                          SupportsServantReflex)
+import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
+                                          QueryPart(..), addHeader, authData,
+                                          defReq, prependToPathParts,
+                                          performRequestCT,
+                                          performRequestNoBody,
+                                          qParamToQueryPart, reqBody,
+                                          reqSuccess, reqFailure,
+                                          reqMethod, respHeaders, response,
+                                          qParams)
+import           Reflex.Dom              (Dynamic, Event, Reflex,
+                                          XhrRequest(..),
+                                          XhrResponseHeaders(..),
+                                          XhrResponse(..), ffor, fmapMaybe,
+                                          leftmost, performRequestAsync,
+                                          tagPromptlyDyn )
 
 -- * Accessing APIs as a Client
 
@@ -78,13 +99,13 @@ instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
 -- >
 -- > myApi :: Proxy MyApi = Proxy
 -- >
--- > getBook :: MonadWidget t m
+-- > getBook :: SupportsServantReflex t m
 --           => Dynamic t BaseUrl
 --           -> Dynamic t (Maybe Text)
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
-instance (MonadWidget t m, ToHttpApiData a, HasClient t m sublayout)
+instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout)
       => HasClient t m (Capture capture a :> sublayout) where
 
   type Client t m (Capture capture a :> sublayout) =
@@ -101,7 +122,7 @@ instance (MonadWidget t m, ToHttpApiData a, HasClient t m sublayout)
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
-  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), MonadWidget t m
+  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' a) where
   type Client t m (Verb method status cts' a) =
     Event t () -> m (Event t (ReqResult a))
@@ -109,12 +130,12 @@ instance {-# OVERLAPPABLE #-}
     -- ExceptT ServantError IO a
   clientWithRoute Proxy _ req baseurl =
     performRequestCT (Proxy :: Proxy ct) method req' baseurl
-      where method = decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
 -- -- VERB (No content) --
 instance {-# OVERLAPPING #-}
-  (ReflectMethod method, MonadWidget t m) =>
+  (ReflectMethod method, SupportsServantReflex t m) =>
   HasClient t m (Verb method status cts NoContent) where
   type Client t m (Verb method status cts NoContent) =
     Event t () -> m (Event t (ReqResult NoContent))
@@ -122,7 +143,7 @@ instance {-# OVERLAPPING #-}
     -- ExceptT ServantError IO NoContent
   clientWithRoute Proxy _ req baseurl =
     performRequestNoBody method req baseurl
-      where method = decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 toHeaders :: BuildHeadersTo ls => ReqResult a -> ReqResult (Headers ls a)
 toHeaders r =
@@ -152,7 +173,7 @@ instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
     ReflectMethod method, cts' ~ (ct ': cts),
-    MonadWidget t m
+    SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' (Headers ls a)) where
   type Client t m (Verb method status cts' (Headers ls a)) =
     Event t () -> m (Event t (ReqResult (Headers ls a)))
@@ -167,7 +188,7 @@ instance {-# OVERLAPPABLE #-}
 -- HEADERS Verb (No content) --
 instance {-# OVERLAPPABLE #-}
   ( BuildHeadersTo ls, BuildHeaderKeysTo ls, ReflectMethod method,
-    MonadWidget t m
+    SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
   type Client t m (Verb method status cts (Headers ls NoContent))
     = Event t () -> m (Event t (ReqResult (Headers ls NoContent)))
@@ -194,7 +215,7 @@ instance {-# OVERLAPPABLE #-}
 -- > -- then you can just use "viewRefer" to query that endpoint
 -- > -- specifying Nothing or e.g Just "http://haskell.org/" as arguments
 instance (KnownSymbol sym, ToHttpApiData a,
-          HasClient t m sublayout, MonadWidget t m)
+          HasClient t m sublayout, SupportsServantReflex t m)
       => HasClient t m (Header sym a :> sublayout) where
 
   type Client t m (Header sym a :> sublayout) =
@@ -346,7 +367,7 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
 -- | Pick a 'Method' and specify where the server you want to query is. You get
 -- back the full `Response`.
 -- TODO redo
-instance (MonadWidget t m) => HasClient t m Raw where
+instance SupportsServantReflex t m => HasClient t m Raw where
   type Client t m Raw = Dynamic t (Either Text (XhrRequest ()))
                       -> Event t ()
                       -> m (Event t (ReqResult ()))

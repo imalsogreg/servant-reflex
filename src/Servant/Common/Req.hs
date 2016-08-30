@@ -9,20 +9,19 @@
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
-import           Control.Applicative (liftA2, liftA3)
+import           Control.Applicative        (liftA2, liftA3)
 import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.Map as Map
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Proxy (Proxy(..))
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
-import           Reflex
+import qualified Data.Map                   as Map
+import           Data.Maybe                 (catMaybes)
+import           Data.Monoid                ((<>))
+import           Data.Proxy                 (Proxy(..))
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
 import           Reflex.Dom
-import           Servant.Common.BaseUrl
-import           Servant.API.ContentTypes
-import           Web.HttpApiData
+import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl, SupportsServantReflex)
+import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
+import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
 
@@ -90,14 +89,12 @@ displayHttpRequest :: Text -> Text
 displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
 -- | This function actually performs the request.
-performRequest :: forall t m.MonadWidget t m
+performRequest :: forall t m.(SupportsServantReflex t m)
                => Text
                -> Req t
                -> Dynamic t BaseUrl
                -> Event t ()
                -> m (Event t XhrResponse, Event t Text)
-               -- -> ExceptT ServantError IO ( Int, ByteString, MediaType
-               --                            , [HTTP.Header], Response ByteString)
 performRequest reqMeth req reqHost trigger = do
 
   let t :: Dynamic t [Either Text Text]
@@ -210,15 +207,18 @@ bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = T.pack . BL.unpack
 #endif
 
-performRequestNoBody ::
-  forall t m .MonadWidget t m => Text -> Req t -> Dynamic t BaseUrl
-                              -> Event t () -> m (Event t (ReqResult NoContent))
+performRequestNoBody :: forall t m .(SupportsServantReflex t m)
+                     => Text
+                     -> Req t
+                     -> Dynamic t BaseUrl
+                     -> Event t () -> m (Event t (ReqResult NoContent))
 performRequestNoBody reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
   return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
 
 
-performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
+performRequestCT :: (SupportsServantReflex t m,
+                     MimeUnrender ct a)
                  => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl
                  -> Event t () -> m (Event t (ReqResult a))
 performRequestCT ct reqMeth req reqHost trigger = do

@@ -24,10 +24,14 @@ module Servant.Reflex
   ) where
 
 import           Control.Applicative
+import qualified Data.Set                as Set
+import qualified Data.Text.Encoding      as E
+import           Data.CaseInsensitive    (mk)
 import           Data.Proxy
 import           Data.String.Conversions
-import           Data.Text                  (Text)
-import qualified Data.Text                  as T
+import qualified Data.Map                as Map
+import           Data.Text               (Text)
+import qualified Data.Text               as T
 import           Data.Text.Encoding
 import           GHC.TypeLits
 import           Servant.API
@@ -120,42 +124,60 @@ instance {-# OVERLAPPING #-}
     performRequestNoBody method req baseurl
       where method = decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
--- -- HEADERS Verb (Content) --
--- -- Headers combinator not treated in fully general case,
--- -- in order to deny instances for (Headers ls (Capture "id" Int)),
--- -- a combinator that wouldn't make sense
--- -- TODO Overlapping??
--- instance {-# OVERLAPPABLE #-}
---   -- Note [Non-Empty Content Types]
---   ( MimeUnrender ct a, BuildHeadersTo ls,
---     ReflectMethod method, cts' ~ (ct ': cts),
---     MonadWidget t m
---   ) => HasClient t m (Verb method status cts' (Headers ls a)) where
---   type Client t m (Verb method status cts' (Headers ls a))
---     = Event t () -> m (Event t (Maybe a, XhrResponse))
---       -- ExceptT ServantError IO (Headers ls a)
---   clientWithRoute Proxy req baseurl = do
---     let method = reflectMethod (Proxy :: Proxy method)
---     (hdrs, resp) <- performRequestCT (Proxy :: Proxy ct) method req baseurl
---     return $ Headers { getResponse = resp
---                      , getHeadersHList = buildHeadersTo hdrs
---                      }
+toHeaders :: BuildHeadersTo ls => ReqResult a -> ReqResult (Headers ls a)
+toHeaders r =
+  let toBS = E.encodeUtf8
+      hdrs = maybe []
+                   (\xhr -> fmap (\(h,v) -> (mk (toBS h), toBS v))
+                     (Map.toList $ _xhrResponse_headers xhr))
+                   (response r)
+  in  ffor r $ \a -> Headers {getResponse = a ,getHeadersHList = buildHeadersTo hdrs}
 
+class BuildHeaderKeysTo hs where
+  buildHeaderKeysTo :: Proxy hs -> [T.Text]
+
+instance {-# OVERLAPPABLE #-} BuildHeaderKeysTo '[]
+  where buildHeaderKeysTo _ = []
+
+instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
+  => BuildHeaderKeysTo '[(Header h v) ': xs] where
+  buildHeaderKeysTo _ = (T.pack $ symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
+
+-- HEADERS Verb (Content) --
+-- Headers combinator not treated in fully general case,
+-- in order to deny instances for (Headers ls (Capture "id" Int)),
+-- a combinator that wouldn't make sense
 -- TODO Overlapping??
--- -- HEADERS Verb (No content) --
--- instance {-# OVERLAPPABLE #-}
---   ( BuildHeadersTo ls, ReflectMethod method,
---     MonadWidget t m
---   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
---   type Client t m (Verb method status cts (Headers ls NoContent))
---     = Event t () -> m (Event t XhrResponse)
---       -- ExceptT ServantError IO (Headers ls NoContent)
---   clientWithRoute Proxy req baseurl = do
---     let method = reflectMethod (Proxy :: Proxy method)
---     hdrs <- performRequestNoBody method req baseurl
---     return $ Headers { getResponse = NoContent
---                      , getHeadersHList = buildHeadersTo hdrs
---                      }
+instance {-# OVERLAPPABLE #-}
+  -- Note [Non-Empty Content Types]
+  ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
+    ReflectMethod method, cts' ~ (ct ': cts),
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts' (Headers ls a)) where
+  type Client t m (Verb method status cts' (Headers ls a)) =
+    Event t () -> m (Event t (ReqResult (Headers ls a)))
+  clientWithRoute Proxy _ req baseurl = do
+    let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+    resp <- performRequestCT (Proxy :: Proxy ct) method req' baseurl
+    return $ (fmap . fmap) toHeaders resp
+    where req' = req { respHeaders =
+                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
+                     }
+
+-- HEADERS Verb (No content) --
+instance {-# OVERLAPPABLE #-}
+  ( BuildHeadersTo ls, BuildHeaderKeysTo ls, ReflectMethod method,
+    MonadWidget t m
+  ) => HasClient t m (Verb method status cts (Headers ls NoContent)) where
+  type Client t m (Verb method status cts (Headers ls NoContent))
+    = Event t () -> m (Event t (ReqResult (Headers ls NoContent)))
+  clientWithRoute Proxy _ req baseurl = do
+    let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+    resp <- performRequestNoBody method req' baseurl
+    return $ (fmap . fmap) toHeaders resp
+    where req' = req {respHeaders =
+                      OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
+                     }
 
 
 -- HEADER
@@ -227,7 +249,6 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
       => HasClient t m (QueryParam sym a :> sublayout) where
 
   type Client t m (QueryParam sym a :> sublayout) =
-    -- TODO (Maybe a), or (Maybe (Maybe a))? (should the user be able to send a Nothing)
     Dynamic t (QParam a) -> Client t m sublayout
 
   -- if mparam = Nothing, we don't add it to the query string

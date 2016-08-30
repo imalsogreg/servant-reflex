@@ -32,6 +32,11 @@ data ReqResult a = ResponseSuccess a XhrResponse
                  | ResponseFailure Text XhrResponse
                  | RequestFailure Text
 
+instance Functor ReqResult where
+  fmap f (ResponseSuccess a xhr) = ResponseSuccess (f a) xhr
+  fmap _ (ResponseFailure r x)   = ResponseFailure r x
+  fmap _ (RequestFailure r)      = RequestFailure r
+
 reqSuccess :: ReqResult a -> Maybe a
 reqSuccess (ResponseSuccess x _) = Just x
 reqSuccess _                     = Nothing
@@ -64,11 +69,12 @@ data Req t = Req
   , qParams      :: [(Text, QueryPart t)]
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
   , headers      :: [(Text, Dynamic t (Either Text Text))]
+  , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
 defReq :: Req t
-defReq = Req "GET" [] [] Nothing [] Nothing
+defReq = Req "GET" [] [] Nothing [] def Nothing
 
 prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
@@ -204,17 +210,13 @@ bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = T.pack . BL.unpack
 #endif
 
--- TODO implement
--- => String -> Req -> BaseUrl -> ExceptT ServantError IO [HTTP.Header]
-  -- TODO Proxy probably not needed
 performRequestNoBody ::
   forall t m .MonadWidget t m => Text -> Req t -> Dynamic t BaseUrl
---                               -> Event t () -> m (Event t (Maybe NoContent, XhrResponse))
                               -> Event t () -> m (Event t (ReqResult NoContent))
-performRequestNoBody _ _ _ _ = do
-  -- performRequest reqMeth req reqHost trigger
-  undefined
-  -- return hdrs
+performRequestNoBody reqMeth req reqHost trigger = do
+  (resp, badReq) <- performRequest reqMeth req reqHost trigger
+  return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
+
 
 performRequestCT :: (MonadWidget t m, MimeUnrender ct a)
                  => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl

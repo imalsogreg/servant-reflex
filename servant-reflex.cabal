@@ -40,9 +40,6 @@ library
     text                >= 1.2  && < 1.3,
     transformers        >= 0.4  && < 0.6
 
-  if impl(ghcjs)
-      build-depends: ghcjs-base >= 0.2 && < 0.3
-
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
   default-language: Haskell2010

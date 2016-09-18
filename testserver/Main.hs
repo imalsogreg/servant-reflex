@@ -62,12 +62,12 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDire
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.
-test :: Application (Handler App App)
-test = serve testApi server
+test :: Handler App App ()
+test = serveSnap testApi server
 
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
-  addRoutes [("", applicationToSnap test)
+  addRoutes [("", test)
             ,("", serveDirectory "static")
             ]
   return App

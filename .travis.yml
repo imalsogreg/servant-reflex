@@ -4,6 +4,10 @@ before_cache:
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
 
+addons:
+  apt:
+    - phantomjs
+
 matrix:
   include:
     - env: CABALVER=1.24 GHCVER=7.10.3
@@ -38,7 +42,16 @@ script:
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
 - deps/reflex-platform/work-on ghc ./. --command "cabal configure --enable-tests && cabal build"
+- ./toSite
 - bash ./deploy.sh
+- ./init-sandbox.sh
+- cd testserver
+- cabal install --only-dep
+- cabal build
+- dist/build/back/back -p 8000 &
+- cd ..
+- phantomjs --webdriver=127.0.0.1:4444
+- dist/build/test/test
 
 cache:
   directories:

@@ -59,4 +59,8 @@ test-suite testsuite
   ghc-options: -Wall -fwarn-tabs -O2 -fhpc -threaded
   other-modules:
   default-language: Haskell2010
-  build-depends: base
+  build-depends: base,
+                 hspec-webdriver,
+                 reflex,
+                 reflex-dom,
+                 servant-reflex

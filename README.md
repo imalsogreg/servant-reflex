@@ -1,5 +1,3 @@
-Note: work in progress.
-
 # servant-reflex
 
 [![Build Status](https://travis-ci.org/imalsogreg/servant-reflex.svg?branch=dynamic)](https://travis-ci.org/imalsogreg/servant-reflex)

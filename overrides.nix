@@ -8,6 +8,8 @@ let
 in
 reflex-platform.ghcjs.override {
   overrides = self: super: { 
-     reflex-dom  = dontCheck (self.callPackage deps/reflex-dom {});
+     reflex-dom    = dontCheck (self.callPackage deps/reflex-dom {});
+     servant       = dontCheck (self.callPackage (cabal2nixResult deps/servant/servant) {});
+     http-api-data = dontCheck (self.callPackage (cabal2nixResult deps/http-api-data) {});
   };
 }

@@ -46,8 +46,8 @@ run = do
         client api (Proxy :: Proxy m) url
 
   elClass "div" "demo-group" $ do
-    unitBtn  <- button "Get unit"
-    intBtn   <- button "Get int"
+    unitBtn  <- divClass "unit-button" $ button "Get unit"
+    intBtn   <- divClass "int-button"  $ button "Get int"
 
     unitResponse <- getUnit unitBtn
     intResponse :: Event t (ReqResult Int) <- getInt intBtn
@@ -58,47 +58,56 @@ run = do
          leftmost [fmapMaybe response unitResponse
                   ,fmapMaybe response intResponse
                   ]
-    dynText r >> el "br" (return ()) >> text "Total: " >> display score
+    divClass "unit-int-response" $ el "p" $ dynText r >> el "br" (return ()) >> text "Total: " >> display score
 
   elClass "div" "demo-group" $ do
 
     text "Name"
     el "br" $ return ()
-    inp :: Dynamic t Text <- fmap value (textInput def)
+    inp :: Dynamic t Text <- fmap value $ divClass "name-input" $ (textInput def)
     let checkedName = fmap (\i -> bool (QParamSome i) (QParamInvalid "Need a name") (T.null i)) inp
     el "br" $ return ()
 
     text "Greetings (space-separated)"
     el "br" $ return ()
-    greetings <- fmap (fmap T.words . value) (textInput def)
+    greetings <- fmap (fmap T.words . value) $
+      divClass "greetings-input" $ (textInput def)
 
     el "br" $ return ()
 
-    gusto <- value <$> checkbox False def
+    gusto <- fmap value $ divClass "gusto-input" $ checkbox False def
 
     el "br" $ return ()
-    sayhiClicks :: Event t () <- button "Say hi"
+    sayhiClicks :: Event t () <- divClass "hi-button" $ button "Say hi"
     let triggers = leftmost [sayhiClicks, () <$ updated inp]
 
     resp <- sayhi checkedName greetings gusto triggers
-    dynText =<< holdDyn "No hi yet" (leftmost [fmapMaybe reqSuccess resp, fmapMaybe reqFailure resp])
+    divClass "greeting-response" $ dynText =<<
+      holdDyn "No hi yet" (leftmost [ fmapMaybe reqSuccess resp
+                                    , fmapMaybe reqFailure resp])
 
   elClass "div" "demo-group" $ do
     text "A Double to double"
     el "br" $ return ()
-    dblinp <- value <$> textInput def
-    dblBtn <- button "Double it"
-    dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $ dblinp) dblBtn
-    dynText =<< holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
+    dblinp <- fmap value $ divClass "double-input" $ textInput def
+    dblBtn <- divClass "double-button" $ button "Double it"
+    dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $
+                          dblinp) dblBtn
+    divClass "double-errors" $ dynText =<< 
+      holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
     el "br" (return ())
-    display =<< holdDyn "No number yet" (fmap tShow $ fmapMaybe reqSuccess dblResp)
+    divClass "double-result" $ el "p" $ dynText =<<
+      holdDyn "No number yet" (fmap tShow $
+                               fmapMaybe reqSuccess dblResp)
 
   elClass "div" "demo-group" $ do
     text "Multi-part path"
     b <- value <$> checkbox False def
     mpGo <- button "Test"
     multiResp <- multi b mpGo
-    dynText =<< holdDyn "No res yet" (fmap tShow $ fmapMaybe reqSuccess $ multiResp)
+    dynText =<< holdDyn "No res yet" (fmap tShow $
+                                      fmapMaybe reqSuccess $
+                                      multiResp)
 
 showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =

@@ -23,6 +23,7 @@ before_install:
  - openssl aes-256-cbc -K $encrypted_3c89d919c82e_key -iv $encrypted_3c89d919c82e_iv -in deploy_key.enc -out deploy_key -d
  - unset CC
  - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+ - git submodule update --init --recursive
 
 install:
  - cabal --version
@@ -36,19 +37,18 @@ install:
    fi
  - travis_retry cabal update -v
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
+ - deps/reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure && cabal build"
+ - cd testserver && dist/build/back/back -p 8000 &
+ - sleep 3
+ - phantomjs --webdriver=127.0.0.1:4444 &
+ - sleep 3
 
 script:
-- git config --global user.email "travis-ci@example.com"
-- git config --global user.name "Travis-CI"
-- git submodule update --init --recursive
-- ./build.sh
-- deps/reflex-platform/work-on ./overrides-ghc.nix ./. --command "cabal configure --enable-tests && cabal build"
-- bash ./deploy.sh
-- ./init-sandbox.sh
-- cd testserver
-- cabal install --only-dep
-- cabal build
-- run-wd-tests.sh
+ - git config --global user.email "travis-ci@example.com"
+ - git config --global user.name "Travis-CI"
+ - ./build.sh
+ - deps/reflex-platform/work-on ./overrides-ghc.nix ./. --command "cabal configure --enable-tests && cabal build"
+ - dist/build/spec/spec
 
 cache:
   directories:

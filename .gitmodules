@@ -16,3 +16,6 @@
 [submodule "deps/http-api-data"]
 	path = deps/http-api-data
 	url = https://github.com/fizruk/http-api-data
+[submodule "deps/servant"]
+	path = deps/servant
+	url = https://github.com/haskell-servant/servant

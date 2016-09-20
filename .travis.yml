@@ -51,7 +51,7 @@ script:
 - dist/build/back/back -p 8000 &
 - cd ..
 - phantomjs --webdriver=127.0.0.1:4444
-- dist/build/test/test
+- dist/build/spec/spec
 
 cache:
   directories:

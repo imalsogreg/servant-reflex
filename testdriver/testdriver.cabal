@@ -1,0 +1,26 @@
+Name: testdriver
+Version: 0.2
+Synopsis: Selenium test driver for Servant reflex
+Description: Servant reflex API generator
+License: AllRightsReserved
+License-file: LICENSE.md
+Author: Greg Hale, Doug Beardsley
+Maintainer: imalsogreg@gmail.com
+Stability: Experimental
+Category: Web
+Build-type: Simple
+Cabal-version: >=1.10
+
+executable spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs: test
+  ghc-prof-options: -auto
+  ghc-options: -Wall -fwarn-tabs -O2 -threaded
+  other-modules:
+  default-language: Haskell2010
+  build-depends: base,
+                 hspec,
+                 hspec-webdriver,
+                 text,
+                 webdriver

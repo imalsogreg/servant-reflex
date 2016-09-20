@@ -38,6 +38,7 @@ install:
  - travis_retry cabal update -v
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
  - deps/reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure && cabal build"
+ - deps/reflex-platform/work-on ghc ./testdriver --command "cd testdriver && cabal configure && cabal build"
  - cd testserver && dist/build/back/back -p 8000 &
  - sleep 3
  - phantomjs --webdriver=127.0.0.1:4444 &
@@ -47,8 +48,7 @@ script:
  - git config --global user.email "travis-ci@example.com"
  - git config --global user.name "Travis-CI"
  - ./build.sh
- - deps/reflex-platform/work-on ./overrides-ghc.nix ./. --command "cabal configure --enable-tests && cabal build"
- - dist/build/spec/spec
+ - testdriver/dist/build/spec/spec
 
 cache:
   directories:

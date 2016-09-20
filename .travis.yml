@@ -42,7 +42,6 @@ script:
 - git config --global user.name "Travis-CI"
 - git submodule update --init --recursive
 - ./build.sh
-- ./toSite
 - deps/reflex-platform/work-on ./overrides-ghc.nix ./. --command "cabal configure --enable-tests && cabal build"
 - bash ./deploy.sh
 - ./init-sandbox.sh

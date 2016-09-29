@@ -43,7 +43,8 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
                                           QueryParams, Raw, ReflectMethod(..),
                                           RemoteHost, ReqBody,
                                           ToHttpApiData(..), Vault, Verb)
-import           Servant.Common.BaseUrl  (BaseUrl(..), baseUrlWidget, showBaseUrl,
+import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
+                                          showBaseUrl,
                                           SupportsServantReflex)
 import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
                                           QueryPart(..), addHeader, authData,

@@ -36,9 +36,10 @@ install:
           $HOME/.cabal/packages/hackage.haskell.org/00-index.tar;
    fi
  - travis_retry cabal update -v
+ - git clone https://github.com/reflex-frp/reflex-platform
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
- - deps/reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure && cabal build"
- - deps/reflex-platform/work-on ghc ./testdriver --command "cd testdriver && cabal configure && cabal build"
+ - reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure && cabal build"
+ - reflex-platform/work-on ghc ./testdriver --command "cd testdriver && cabal configure && cabal build"
  - cd testserver && dist/build/back/back -p 8000 &
  - sleep 3
  - phantomjs --webdriver=127.0.0.1:4444 &

@@ -1,18 +1,9 @@
-[submodule "deps/servant-snap"]
-	path = deps/servant-snap
-	url = https://github.com/haskell-servant/servant-snap.git
 [submodule "deps/reflex-dom"]
 	path = deps/reflex-dom
 	url = https://github.com/reflex-frp/reflex-dom.git
 [submodule "deps/reflex"]
 	path = deps/reflex
 	url = https://github.com/reflex-frp/reflex.git
-[submodule "deps/reflex-platform"]
-	path = deps/reflex-platform
-	url = https://github.com/reflex-frp/reflex-platform.git
-[submodule "deps/reflex-dom-contrib"]
-	path = deps/reflex-dom-contrib
-	url = https://github.com/reflex-frp/reflex-dom-contrib
 [submodule "deps/http-api-data"]
 	path = deps/http-api-data
 	url = https://github.com/fizruk/http-api-data

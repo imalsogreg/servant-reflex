@@ -1,7 +1,6 @@
 { reflex-platform, ... }:
 let 
   pkgs = import <nixpkgs> {};
-  reflex-platform = import deps/reflex-platform {};
   c2n = reflex-platform.cabal2nixResult;
 in reflex-platform.ghc.override {
   overrides = self: super: {

@@ -51,7 +51,16 @@ response (ResponseFailure _ x) = Just x
 response _                     = Nothing
 
 
-data QParam a = QParamSome a | QNone | QParamInvalid Text
+-------------------------------------------------------------------------------
+-- | You must wrap the parameter of a QueryParam endpoint with 'QParam' to
+-- indicate whether the parameter is valid and present, validly absent, or
+-- invalid
+data QParam a = QParamSome a
+              -- ^ A valid query parameter
+              | QNone
+              -- ^ Indication that the parameter is intentionally absent (the request is valid)
+              | QParamInvalid Text
+              -- ^ Indication that your validation failed (the request isn't valid)
 
 qParamToQueryPart :: ToHttpApiData a => QParam a -> Either Text (Maybe Text)
 qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
@@ -62,6 +71,10 @@ data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
                  | QueryPartParams (Dynamic t [Text])
                  | QueryPartFlag   (Dynamic t Bool)
 
+
+-------------------------------------------------------------------------------
+-- The data structure used to build up request information while traversing
+-- the shape of a servant API
 data Req t = Req
   { reqMethod    :: Text
   , reqPathParts :: [Dynamic t (Either Text Text)]

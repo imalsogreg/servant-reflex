@@ -15,16 +15,16 @@ We have a webservice API defined in a module where both the server (compiled wit
 
 ```haskell
 type API = "getint"  :> Get '[JSON] Int
-      :<|> "sayhi"   :> QueryParam  "username" String
-                     :> QueryParams "greetings" String
+      :<|> "sayhi"   :> QueryParam  "username" Text
+                     :> QueryParams "greetings" Text
                      :> QueryFlag   "gusto"
-                     :> Get '[JSON] String
+                     :> Get '[JSON] Text
       :<|> "double" :> ReqBody '[JSON] Double
                     :> Post '[JSON] Double
       :<|> Raw
 ```
 
-`servant-reflex` then computes functions that can query the API through an `XhrRequest`.
+`servant-reflex` then computes client functions that can query the API through an `XhrRequest`.
 
 ```haskell
 
@@ -36,7 +36,7 @@ type API = "getint"  :> Get '[JSON] Int
                                                         (constDyn (BasePath "/"))
 ```
 
-These client functions are computed from the API and manage serialization, XhrRequest generation, and deserialization for you. `a` parameters become `Dynamic t (Either String a)` values. You provide a trigger event and receive an `Event t (ReqResult a)`, with responses from the API server (which you would write with `servant-server`).
+These client functions are computed from your API type. They manage serialization, XhrRequest generation, and deserialization for you. `a` parameters used in URL captures become `Dynamic t (Either Text a)` parameters in the client functions. 'QueryFlag', 'QueryParams' and 'QueryParam' API parameters map to 'Dynamic t Bool', 'Dynamic t [a]' and 'Dynamic t (QParam a)' respectively. These parameters to the client function are wrapped with failure possibility to allow you to indicate at any time whether input validation for that parameter has failed and no valid XHR request can be generated. The final parameter is a trigger event for the XHR request. The return value `Event t (ReqResult a)` contains responses from the API server.
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
@@ -45,23 +45,21 @@ These client functions are computed from the API and manage serialization, XhrRe
           -> m (Event t (ReqResult Int)) -- ^ Consume the answer
 
    sayhi :: MonadWidget t m
-         => Dynamic t (Either String String) 
-            -- ^ One input parameter - the 'name'
-         -> Dynamic t [String]
+         => Dynamic t (QParam Text) 
+            -- ^ One input parameter - the 'name', wrapped in 'QParam'
+         -> Dynamic t [Text]
             -- ^ Another input: list of preferred greetings
          -> Dynamic t Bool
             -- ^ Flag for capitalizing the response
          -> Event t ()
             -- ^ Trigger the XHR Request
-         -> m (Event t (ReqResult String))
+         -> m (Event t (ReqResult Text))
 
    doubleit :: MonadWidget t m
-            => Dynamic t (Either String Double)
+            => Dynamic t (Either Text Double)
             -> Event t ()
             -> m (Event t (ReqResult Double))
 ```
-
-Plug any of these functions into your reflex frontend to consume backend servant services. *Isomorphic!*
 
 `ReqResult a` is defined in [`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42) and reports whether or not your request was sent (if validation fails, the request won't be sent), and how decoding of the response went. You can pattern match on these explicitly, but usually you'll want to use `fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the elimination functions to filter the result type you care about, like this:
 
@@ -90,7 +88,7 @@ This example builds some input fields to enter API parameters, buttons to trigge
     display =<< holdDyn (Just 0) serverInts
 
   elClass "div" "hello-demo" $ do
-    nameText <- value <$> textInput def
+    nameText <- QParamSome . value <$> textInput def
     greetings <- (fmap words . value) <$> textInput def
     withGusto <- checkbox def
     helloButton <- button "Say hi"

@@ -4,7 +4,6 @@ let
   c2n = reflex-platform.cabal2nixResult;
 in reflex-platform.ghc.override {
   overrides = self: super: {
-    reflex-dom   = pkgs.haskell.lib.dontCheck (self.callPackage deps/reflex-dom {});
     servant-snap = pkgs.haskell.lib.dontCheck (self.callPackage (c2n deps/servant-snap) {});
     snap         = pkgs.haskell.lib.dontCheck (self.callPackage (c2n deps/servant-snap/deps/snap) {});
     snap-server  = pkgs.haskell.lib.dontCheck (self.callPackage (c2n deps/servant-snap/deps/snap/deps/snap-server) {});

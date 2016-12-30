@@ -79,11 +79,12 @@ class HasPointClient layout where
     type ToXhr       layout :: *
     type FromXhr     layout :: *
     type PointClient layout to from :: *
-    pointClientWithRoute
+    pointInputWithRoute
         :: Proxy layout
         -> PointReq
         -> BaseUrl
-        -> PointClient layout (ToXhr layout) (FromXhr layout)
+        -> ToXhr
+    pointDecodeWithRoute
         -- -> PointClient layout
         -- -> (to -> XhrRequest Text, XhrResponse -> Maybe from)
 

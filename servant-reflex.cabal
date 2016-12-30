@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.2
+Version: 0.2.1
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: AllRightsReserved
@@ -14,6 +14,7 @@ Cabal-version: >=1.10
 library
   exposed-modules:
     Servant.Reflex
+    Servant.EventAPI
 
   other-modules:
     Servant.Common.BaseUrl

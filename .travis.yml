@@ -38,7 +38,7 @@ install:
  - travis_retry cabal update -v
  - git clone https://github.com/reflex-frp/reflex-platform
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
- - reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure && cabal build"
+ - reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure -fExample && cabal build"
  - reflex-platform/work-on ghc ./testdriver --command "cd testdriver && cabal configure && cabal build"
  - cd testserver && dist/build/back/back -p 8000 &
  - sleep 3

@@ -6,25 +6,51 @@
 
 module Main where
 
+------------------------------------------------------------------------------
 import Data.Bool
 import Data.Maybe
 import Control.Monad.Fix (MonadFix)
-import Data.Monoid ((<>))
+import Data.Monoid (First(..), (<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Servant.API
-import Servant.Reflex
 import API
 import Data.Proxy
 import Text.Read (readMaybe)
 import Reflex.Dom
+------------------------------------------------------------------------------
+import Servant.Reflex
+import Servant.Reflex.Multi
+
 
 api :: Proxy API
 api = Proxy
 
 main :: IO ()
-main = mainWidget run
+main = mainWidget $ do
+    divClass "example-base" run
+    divClass "example-multi" runMulti
 
+
+runMulti :: forall t m. (SupportsServantReflex t m,
+                        DomBuilder t m,
+                        DomBuilderSpace m ~ GhcjsDomSpace,
+                        MonadFix m,
+                        PostBuild t m,
+                        MonadHold t m) => m ()
+runMulti = do
+    url <- baseUrlWidget
+    el "br" blank
+    let (_ :<|> _ :<|> _ :<|> dbl :<|> _ :<|> _ ) =
+            clientA api (Proxy :: Proxy m) (Proxy :: Proxy []) url
+    num :: Dynamic t (Either Text Double) <- fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
+    num2 :: Dynamic t (Either Text Double) <-  fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
+    -- dynText =<< holdDyn "waiting" (T.pack . show <$> num)
+    -- numLabeled :: Event t (First Int, Double) <- zipListWithEvent (,) (First . Just <$> [0..]) num
+    b <- button "Run dbl multi"
+    r <- dbl [num,num2] b
+    dynText =<< holdDyn "Waiting" (T.pack . show . fmapMaybe reqSuccess <$> r)
+    return ()
 
 run :: forall t m. (SupportsServantReflex t m,
                     DomBuilder t m,
@@ -39,6 +65,7 @@ run = do
   url <- baseUrlWidget
   el "br" (return ())
   dynText $ showBaseUrl <$> url
+
   el "br" (return ())
 
   -- Name the computed API client functions
@@ -90,7 +117,7 @@ run = do
     text "A Double to double"
     el "br" $ return ()
     dblinp <- fmap value $ divClass "double-input" $ textInput def
-    dblBtn <- divClass "double-button" $ button "Double it"
+    (dblBtn) <- divClass "double-button" $ button "Double it"
     dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $
                           dblinp) dblBtn
     divClass "double-errors" $ dynText =<< 

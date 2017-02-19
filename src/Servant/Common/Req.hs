@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -6,10 +7,14 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+
+{-# LANGUAGE EmptyCase           #-}
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
+import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes)
@@ -18,6 +23,7 @@ import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
+import           Data.Traversable
 import           Reflex.Dom
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl, SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
@@ -96,20 +102,13 @@ addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) ->
 addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
--- * performing requests
-
-displayHttpRequest :: Text -> Text
-displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
-
--- | This function actually performs the request.
-performRequest :: forall t m.(SupportsServantReflex t m)
-               => Text
-               -> Req t
-               -> Dynamic t BaseUrl
-               -> Event t ()
-               -> m (Event t XhrResponse, Event t Text)
-performRequest reqMeth req reqHost trigger = do
-
+reqToReflexRequest
+    :: forall t. Reflex t
+    => Text
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> (Dynamic t (Either Text (XhrRequest XhrPayload)))
+reqToReflexRequest reqMeth req reqHost =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -142,8 +141,8 @@ performRequest reqMeth req reqHost trigger = do
       queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Dynamic t (Either Text [Text])
       queryString :: Dynamic t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
---        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") (sequence qs)
-      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q) baseUrl urlPath queryString
+      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q)
+          baseUrl urlPath queryString
         where
           (</>) :: Text -> Text -> Text
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
@@ -202,6 +201,71 @@ performRequest reqMeth req reqHost trigger = do
 
       xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
+  in xhrReq
+
+-- * performing requests
+
+displayHttpRequest :: Text -> Text
+displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
+
+-- | This function actually performs the request.
+performRequests :: forall t m f.(SupportsServantReflex t m, Traversable f)
+                => Text
+                -> f (Req t)
+                -> Dynamic t BaseUrl
+                -> Event t ()
+                -> m (Event t (f (Either Text XhrResponse)))
+performRequests reqMeth rs reqHost trigger = do
+  let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
+  let reqs    = tagPromptlyDyn xhrReqs trigger
+  resps <- performSomeRequestsAsync reqs
+  return resps
+
+-- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
+performSomeRequestsAsync
+    :: (MonadIO (Performable m),
+        HasWebView (Performable m),
+        PerformEvent t m,
+        TriggerEvent t m,
+        Traversable f,
+        IsXhrPayload a)
+    => Event t (f (Either Text (XhrRequest a)))
+    -> m (Event t (f (Either Text XhrResponse)))
+performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap return
+
+
+------------------------------------------------------------------------------
+-- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
+-- that accepts 'f (Either e (XhrRequestb))' events
+performSomeRequestsAsync'
+    :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
+    => (XhrRequest b -> (a -> IO ()) -> Performable m XMLHttpRequest)
+    -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
+performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
+  rs <- hrs
+  resps <- forM rs $ \r -> case r of
+      Left e -> do
+          resp <- liftIO $ newMVar (Left e)
+          return resp
+      Right r' -> do
+          resp <- liftIO newEmptyMVar
+          _ <- newXhr r' $ liftIO . putMVar resp . Right
+          return resp
+  _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar
+  return ()
+
+
+
+-- | This function actually performs the request.
+performRequest :: forall t m .(SupportsServantReflex t m)
+               => Text
+               -> (Req t)
+               -> Dynamic t BaseUrl
+               -> Event t ()
+               -> m (Event t (XhrResponse), Event t Text)
+performRequest reqMeth req reqHost trigger = do
+
+  let xhrReq  = reqToReflexRequest reqMeth req reqHost
   let reqs    = tagPromptlyDyn xhrReq trigger
       okReqs  = fmapMaybe (either (const Nothing) Just) reqs
       badReqs = fmapMaybe (either Just (const Nothing)) reqs
@@ -209,6 +273,7 @@ performRequest reqMeth req reqHost trigger = do
   resps <- performRequestAsync okReqs
 
   return (resps, badReqs)
+
 
 #ifdef ghcjs_HOST_OS
 type XhrPayload = String
@@ -229,6 +294,20 @@ performRequestNoBody reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
   return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
 
+performRequestsNoBody :: forall t m f .(SupportsServantReflex t m, Traversable f)
+                     => Text
+                     -> f (Req t)
+                     -> Dynamic t BaseUrl
+                     -> Event t () -> m (Event t (f (ReqResult NoContent)))
+performRequestsNoBody reqMeth reqs reqHost trigger = do
+  resp <- performRequests reqMeth reqs reqHost trigger
+  return $ (fmap . fmap) aux resp
+  where
+    aux (Right x) = ResponseSuccess NoContent x
+    aux (Left  e) = RequestFailure e
+  -- return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
+
+
 
 performRequestCT :: (SupportsServantReflex t m,
                      MimeUnrender ct a)
@@ -244,5 +323,29 @@ performRequestCT ct reqMeth req reqHost trigger = do
         (Left e,  r) -> ResponseFailure (T.pack e) r
   return $ leftmost [reqs, fmap RequestFailure badReq]
 
+performRequestsCT
+    :: (SupportsServantReflex t m,
+        MimeUnrender ct a, Traversable f)
+    => Proxy ct
+    -> Text
+    -> f (Req t)
+    -> Dynamic t BaseUrl
+    -> Event t ()
+    -> m (Event t (f (ReqResult a)))
+performRequestsCT ct reqMeth reqs reqHost trigger = do
+  resps <- performRequests reqMeth reqs reqHost trigger
+  return $ ffor resps $ \eithXhrs -> ffor eithXhrs $ \eithXhr -> case eithXhr of
+      Left e  -> RequestFailure e
+      Right x -> case _xhrResponse_responseText x of
+          Nothing -> ResponseFailure "No body text" x
+          Just bod -> case mimeUnrender ct . BL.fromStrict . TE.encodeUtf8 $ bod of
+              Left e -> ResponseFailure (T.pack e) x
+              Right a -> ResponseSuccess a x
+
+
 note :: e -> Maybe a -> Either e a
 note e = maybe (Left e) Right
+
+fmapL :: (e -> e') -> Either e a -> Either e' a
+fmapL _ (Right a) = Right a
+fmapL f (Left e)  = Left (f e)

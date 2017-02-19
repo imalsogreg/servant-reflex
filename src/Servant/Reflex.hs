@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -18,12 +19,14 @@
 -- API.
 module Servant.Reflex
   ( client
+  , BuildHeaderKeysTo(..)
+  , toHeaders
   , HasClient(..)
   , module Servant.Common.Req
   , module Servant.Common.BaseUrl
   ) where
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 import           Control.Applicative
 import           Data.Monoid             ((<>))
 import qualified Data.Set                as Set
@@ -43,6 +46,14 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
                                           QueryParams, Raw, ReflectMethod(..),
                                           RemoteHost, ReqBody,
                                           ToHttpApiData(..), Vault, Verb)
+
+import           Reflex.Dom              (Dynamic, Event, Reflex,
+                                          XhrRequest(..),
+                                          XhrResponseHeaders(..),
+                                          XhrResponse(..), ffor, fmapMaybe,
+                                          leftmost, performRequestAsync,
+                                          tagPromptlyDyn )
+------------------------------------------------------------------------------
 import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
                                           showBaseUrl,
                                           SupportsServantReflex)
@@ -50,17 +61,14 @@ import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
                                           QueryPart(..), addHeader, authData,
                                           defReq, prependToPathParts,
                                           performRequestCT,
+                                          performRequestsCT,
                                           performRequestNoBody,
+                                          performRequestsNoBody,
+                                          performSomeRequestsAsync,
                                           qParamToQueryPart, reqBody,
                                           reqSuccess, reqFailure,
                                           reqMethod, respHeaders, response,
                                           qParams)
-import           Reflex.Dom              (Dynamic, Event, Reflex,
-                                          XhrRequest(..),
-                                          XhrResponseHeaders(..),
-                                          XhrResponse(..), ffor, fmapMaybe,
-                                          leftmost, performRequestAsync,
-                                          tagPromptlyDyn )
 
 -- * Accessing APIs as a Client
 
@@ -81,6 +89,7 @@ client :: (HasClient t m layout)
        => Proxy layout -> Proxy m -> Dynamic t BaseUrl -> Client t m layout
 client p q baseurl = clientWithRoute p q defReq baseurl
 
+
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
@@ -91,9 +100,11 @@ class HasClient t m layout where
 
 instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
   type Client t m (a :<|> b) = Client t m a :<|> Client t m b
+
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy a) q req baseurl :<|>
     clientWithRoute (Proxy :: Proxy b) q req baseurl
+
 
 -- Capture. Example:
 -- > type MyApi = "books" :> Capture "isbn" Text :> Get '[JSON] Book
@@ -106,6 +117,7 @@ instance (HasClient t m a, HasClient t m b) => HasClient t m (a :<|> b) where
 --           -> Event t ()
 --           -> m (Event t (Either XhrError (Text, Book)))
 -- > getBook = client myApi (constDyn host)
+
 instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout)
       => HasClient t m (Capture capture a :> sublayout) where
 
@@ -117,8 +129,8 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout)
                     q
                     (prependToPathParts p req)
                     baseurl
-
     where p = (fmap . fmap) (toUrlPiece) val
+
 
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
@@ -134,6 +146,9 @@ instance {-# OVERLAPPABLE #-}
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
+
+
+
 -- -- VERB (No content) --
 instance {-# OVERLAPPING #-}
   (ReflectMethod method, SupportsServantReflex t m) =>
@@ -145,6 +160,7 @@ instance {-# OVERLAPPING #-}
   clientWithRoute Proxy _ req baseurl =
     performRequestNoBody method req baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+
 
 toHeaders :: BuildHeadersTo ls => ReqResult a -> ReqResult (Headers ls a)
 toHeaders r =
@@ -186,6 +202,7 @@ instance {-# OVERLAPPABLE #-}
                        OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
 
+
 -- HEADERS Verb (No content) --
 instance {-# OVERLAPPABLE #-}
   ( BuildHeadersTo ls, BuildHeaderKeysTo ls, ReflectMethod method,
@@ -200,6 +217,7 @@ instance {-# OVERLAPPABLE #-}
     where req' = req {respHeaders =
                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
+
 
 
 -- HEADER
@@ -229,6 +247,9 @@ instance (KnownSymbol sym, ToHttpApiData a,
                     baseurl
     where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
 
+
+
+
 -- | Using a 'HttpVersion' combinator in your API doesn't affect the client
 -- functions.
 instance HasClient t m sublayout
@@ -239,6 +260,7 @@ instance HasClient t m sublayout
 
   clientWithRoute Proxy q =
     clientWithRoute (Proxy :: Proxy sublayout) q
+
 
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
@@ -284,6 +306,8 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
           p prm = QueryPartParam $ fmap qParamToQueryPart prm -- (fmap . fmap) (unpack . toQueryParam) prm
           paramPair = (T.pack pname, p mparam)
 
+
+
 -- | If you use a 'QueryParams' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
 -- an additional argument, a list of values of the type specified
@@ -327,6 +351,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
                         paramlist
 
 
+
 -- | If you use a 'QueryFlag' in one of your endpoints in your API,
 -- the corresponding querying function will automatically take
 -- an additional 'Bool' argument.
@@ -365,6 +390,7 @@ instance (KnownSymbol sym, HasClient t m sublayout, Reflex t)
           pName    = symbolVal (Proxy :: Proxy sym)
 
 
+
 -- | Pick a 'Method' and specify where the server you want to query is. You get
 -- back the full `Response`.
 -- TODO redo
@@ -387,6 +413,7 @@ instance SupportsServantReflex t m => HasClient t m Raw where
     resps <- performRequestAsync okReq
     return $ leftmost [fmap (ResponseSuccess () ) resps
                       ,fmap RequestFailure badReq]
+
 
 
 hush :: Either e a -> Maybe a
@@ -430,6 +457,8 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
                              (\b -> (mimeRender ctProxy b, ctString))
                              body
 
+
+
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m (path :> sublayout) where
   type Client t m (path :> sublayout) = Client t m sublayout
@@ -441,11 +470,13 @@ instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m 
 
     where p = symbolVal (Proxy :: Proxy path)
 
+
 instance HasClient t m api => HasClient t m (Vault :> api) where
   type Client t m (Vault :> api) = Client t m api
 
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy api) q req baseurl
+
 
 instance HasClient t m api => HasClient t m (RemoteHost :> api) where
   type Client t m (RemoteHost :> api) = Client t m api
@@ -453,11 +484,14 @@ instance HasClient t m api => HasClient t m (RemoteHost :> api) where
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy api) q req baseurl
 
+
+
 instance HasClient t m api => HasClient t m (IsSecure :> api) where
   type Client t m (IsSecure :> api) = Client t m api
 
   clientWithRoute Proxy q req baseurl =
     clientWithRoute (Proxy :: Proxy api) q req baseurl
+
 
 instance (HasClient t m api, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) where

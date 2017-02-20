@@ -14,10 +14,12 @@ module Servant.Common.Req where
 -------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
+import           Control.Arrow              (second)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes)
+import           Data.Functor.Compose
 import           Data.Monoid                ((<>))
 import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
@@ -209,17 +211,17 @@ displayHttpRequest :: Text -> Text
 displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
 -- | This function actually performs the request.
-performRequests :: forall t m f.(SupportsServantReflex t m, Traversable f)
+performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
                 => Text
                 -> f (Req t)
                 -> Dynamic t BaseUrl
-                -> Event t ()
-                -> m (Event t (f (Either Text XhrResponse)))
+                -> Event t tag
+                -> m (Event t (tag, f (Either Text XhrResponse)))
 performRequests reqMeth rs reqHost trigger = do
   let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
-  let reqs    = tagPromptlyDyn xhrReqs trigger
+  let reqs    = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
   resps <- performSomeRequestsAsync reqs
-  return resps
+  return $ getCompose <$> resps
 
 -- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
 performSomeRequestsAsync
@@ -257,20 +259,20 @@ performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb ->
 
 
 -- | This function actually performs the request.
-performRequest :: forall t m .(SupportsServantReflex t m)
+performRequest :: forall t m tag .(SupportsServantReflex t m)
                => Text
                -> (Req t)
                -> Dynamic t BaseUrl
-               -> Event t ()
-               -> m (Event t (XhrResponse), Event t Text)
+               -> Event t tag
+               -> m (Event t (tag, XhrResponse), Event t (tag, Text))
 performRequest reqMeth req reqHost trigger = do
 
   let xhrReq  = reqToReflexRequest reqMeth req reqHost
-  let reqs    = tagPromptlyDyn xhrReq trigger
-      okReqs  = fmapMaybe (either (const Nothing) Just) reqs
-      badReqs = fmapMaybe (either Just (const Nothing)) reqs
+  let reqs    = attachPromptlyDynWith (flip (,)) xhrReq trigger
+      okReqs  = fmapMaybe (\(t,e) -> either (const Nothing) (Just . (t,)) e) reqs
+      badReqs = fmapMaybe (\(t,e) -> either (Just . (t,)) (const Nothing) e) reqs
 
-  resps <- performRequestAsync okReqs
+  resps <- performRequestsAsync okReqs
 
   return (resps, badReqs)
 
@@ -285,43 +287,47 @@ bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = T.pack . BL.unpack
 #endif
 
-performRequestNoBody :: forall t m .(SupportsServantReflex t m)
+performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
                      => Text
                      -> Req t
                      -> Dynamic t BaseUrl
-                     -> Event t () -> m (Event t (ReqResult NoContent))
+                     -> Event t tag -> m (Event t (tag, ReqResult NoContent))
 performRequestNoBody reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
+  return $ leftmost [ fmap (ResponseSuccess NoContent) <$> resp, fmap RequestFailure <$> badReq]
 
-performRequestsNoBody :: forall t m f .(SupportsServantReflex t m, Traversable f)
+performRequestsNoBody :: forall t m f tag. (SupportsServantReflex t m, Traversable f)
                      => Text
                      -> f (Req t)
                      -> Dynamic t BaseUrl
-                     -> Event t () -> m (Event t (f (ReqResult NoContent)))
+                     -> Event t tag -> m (Event t (tag, f (ReqResult NoContent)))
 performRequestsNoBody reqMeth reqs reqHost trigger = do
   resp <- performRequests reqMeth reqs reqHost trigger
-  return $ (fmap . fmap) aux resp
+  return $ (fmap . fmap) aux <$> resp
   where
     aux (Right x) = ResponseSuccess NoContent x
     aux (Left  e) = RequestFailure e
   -- return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
 
 
-
-performRequestCT :: (SupportsServantReflex t m,
-                     MimeUnrender ct a)
-                 => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl
-                 -> Event t () -> m (Event t (ReqResult a))
+performRequestCT
+    :: (SupportsServantReflex t m,
+        MimeUnrender ct a)
+    => Proxy ct
+    -> Text
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> Event t tag
+    -> m (Event t (tag, ReqResult a))
 performRequestCT ct reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  let decodes = ffor resp $ \xhr ->
+  let decodes = ffor resp $ fmap (\xhr ->
         ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
-         =<< note "No body text" (_xhrResponse_responseText xhr), xhr)
-      reqs = ffor decodes $ \case
+         =<< note "No body text" (_xhrResponse_responseText xhr), xhr))
+      reqs = ffor decodes $ fmap (\case
         (Right a, r) -> ResponseSuccess a r
-        (Left e,  r) -> ResponseFailure (T.pack e) r
-  return $ leftmost [reqs, fmap RequestFailure badReq]
+        (Left e,  r) -> ResponseFailure (T.pack e) r)
+  return $ leftmost [reqs, fmap RequestFailure <$> badReq]
 
 performRequestsCT
     :: (SupportsServantReflex t m,
@@ -330,17 +336,18 @@ performRequestsCT
     -> Text
     -> f (Req t)
     -> Dynamic t BaseUrl
-    -> Event t ()
-    -> m (Event t (f (ReqResult a)))
+    -> Event t tag
+    -> m (Event t (tag, f (ReqResult a)))
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
-  return $ ffor resps $ \eithXhrs -> ffor eithXhrs $ \eithXhr -> case eithXhr of
-      Left e  -> RequestFailure e
-      Right x -> case _xhrResponse_responseText x of
-          Nothing -> ResponseFailure "No body text" x
-          Just bod -> case mimeUnrender ct . BL.fromStrict . TE.encodeUtf8 $ bod of
-              Left e -> ResponseFailure (T.pack e) x
-              Right a -> ResponseSuccess a x
+  return $ fmap (second (fmap reqToResult)) resps
+  where
+    reqToResult (Left  e) = RequestFailure e
+    reqToResult (Right x) = case _xhrResponse_responseText x of
+      Nothing  -> ResponseFailure "No request body" x
+      Just bod -> case mimeUnrender ct . BL.fromStrict . TE.encodeUtf8 $ bod of
+        Left e  -> ResponseFailure (T.pack e) x
+        Right v -> ResponseSuccess v x
 
 
 note :: e -> Maybe a -> Either e a

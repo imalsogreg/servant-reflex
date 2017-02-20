@@ -42,7 +42,7 @@ runMulti :: forall t m. (SupportsServantReflex t m,
 runMulti = do
     url <- baseUrlWidget
     el "br" blank
-    let (_ :<|> _ :<|> _ :<|> dbl :<|> _ :<|> _ ) =
+    let (_ :<|> _ :<|> sayHi :<|> dbl :<|> _ :<|> _ ) =
             clientA api (Proxy :: Proxy m) (Proxy :: Proxy []) (Proxy :: Proxy Int) url
     num :: Dynamic t (Either Text Double) <- fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
     num2 :: Dynamic t (Either Text Double) <-  fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
@@ -50,10 +50,22 @@ runMulti = do
     -- numLabeled :: Event t (First Int, Double) <- zipListWithEvent (,) (First . Just <$> [0..]) num
     b <- button "Run dbl multi"
     reqCount <- count b
-    r <- dbl [num,num2] (tag (current reqCount) b)
+    r <- dbl ((\x y -> [x,y]) <$> num <*> num2) (tag (current reqCount) b)
     dynText =<< holdDyn "Waiting" (T.pack . show . fmapMaybe reqSuccess .snd <$> r)
     lastInd <- holdDyn Nothing (Just . fst <$> r)
     display lastInd
+
+    divClass "demo-group" $ do
+        nms <- fmap (fmap T.words . value) $ divClass "" $ do
+            text "Names"
+            textInput def
+        grts <- fmap (fmap T.words . value) $ divClass "" $ do
+            text "Greetings"
+            textInput def
+        gust <- fmap (value) $ divClass "gusto-input" $ checkbox False def
+        b <- button "Go"
+        r' <- sayHi (fmap QParamSome <$> nms) (fmap (:[]) $ grts) (constDyn [True, False]) (1 <$ b)
+        dynText =<< holdDyn "Waiting" (T.pack . show . fmap (fmapMaybe reqSuccess) <$> r')
     return ()
 
 run :: forall t m. (SupportsServantReflex t m,

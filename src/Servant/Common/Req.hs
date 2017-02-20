@@ -15,6 +15,7 @@ module Servant.Common.Req where
 import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
 import           Control.Arrow              (second)
+import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
@@ -107,10 +108,10 @@ addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . t
 reqToReflexRequest
     :: forall t. Reflex t
     => Text
-    -> Req t
     -> Dynamic t BaseUrl
+    -> Req t
     -> (Dynamic t (Either Text (XhrRequest XhrPayload)))
-reqToReflexRequest reqMeth req reqHost =
+reqToReflexRequest reqMeth reqHost req =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -213,12 +214,13 @@ displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 -- | This function actually performs the request.
 performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
                 => Text
-                -> f (Req t)
+                -> Dynamic t (f (Req t))
                 -> Dynamic t BaseUrl
                 -> Event t tag
                 -> m (Event t (tag, f (Either Text XhrResponse)))
 performRequests reqMeth rs reqHost trigger = do
-  let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
+  -- let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
+  let xhrReqs = join $ (\(fxhr :: f (Req t)) -> sequence $ reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
   let reqs    = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
   resps <- performSomeRequestsAsync reqs
   return $ getCompose <$> resps
@@ -267,7 +269,7 @@ performRequest :: forall t m tag .(SupportsServantReflex t m)
                -> m (Event t (tag, XhrResponse), Event t (tag, Text))
 performRequest reqMeth req reqHost trigger = do
 
-  let xhrReq  = reqToReflexRequest reqMeth req reqHost
+  let xhrReq  = reqToReflexRequest reqMeth reqHost req
   let reqs    = attachPromptlyDynWith (flip (,)) xhrReq trigger
       okReqs  = fmapMaybe (\(t,e) -> either (const Nothing) (Just . (t,)) e) reqs
       badReqs = fmapMaybe (\(t,e) -> either (Just . (t,)) (const Nothing) e) reqs
@@ -298,7 +300,7 @@ performRequestNoBody reqMeth req reqHost trigger = do
 
 performRequestsNoBody :: forall t m f tag. (SupportsServantReflex t m, Traversable f)
                      => Text
-                     -> f (Req t)
+                     -> Dynamic t (f (Req t))
                      -> Dynamic t BaseUrl
                      -> Event t tag -> m (Event t (tag, f (ReqResult NoContent)))
 performRequestsNoBody reqMeth reqs reqHost trigger = do
@@ -334,7 +336,7 @@ performRequestsCT
         MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
-    -> f (Req t)
+    -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> Event t tag
     -> m (Event t (tag, f (ReqResult a)))

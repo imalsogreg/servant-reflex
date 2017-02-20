@@ -44,7 +44,7 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
 import           Reflex.Dom              (Dynamic, Event, Reflex,
                                           XhrRequest(..),
                                           XhrResponseHeaders(..),
-                                          XhrResponse(..), ffor, fmapMaybe,
+                                          XhrResponse(..), constDyn, ffor, fmapMaybe,
                                           leftmost, performRequestAsync, attachPromptlyDynWith,
                                           tagPromptlyDyn )
 ------------------------------------------------------------------------------
@@ -65,22 +65,38 @@ import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
                                           qParams)
 import          Servant.Reflex            (BuildHeaderKeysTo(..), toHeaders)
 
-clientA :: (HasClientMulti t m layout f tag, Applicative f)
-       => Proxy layout -> Proxy m -> Proxy f -> Proxy tag -> Dynamic t BaseUrl -> ClientMulti t m layout f tag
-clientA p q f tag baseurl  = clientWithRouteMulti p q f tag (pure defReq) baseurl
 
+------------------------------------------------------------------------------
+clientA :: (HasClientMulti t m layout f tag, Applicative f, Reflex t)
+        => Proxy layout -> Proxy m -> Proxy f -> Proxy tag
+        -> Dynamic t BaseUrl -> ClientMulti t m layout f tag
+clientA p q f tag baseurl  =
+    clientWithRouteMulti p q f tag (constDyn (pure defReq)) baseurl
+
+
+------------------------------------------------------------------------------
 class HasClientMulti t m layout f (tag :: *) where
   type ClientMulti t m layout f tag :: *
-  clientWithRouteMulti :: Proxy layout -> Proxy m -> Proxy f -> Proxy tag -> f (Req t) -> Dynamic t BaseUrl -> ClientMulti t m layout f tag
+  clientWithRouteMulti :: Proxy layout -> Proxy m -> Proxy f -> Proxy tag
+                       -> Dynamic t (f (Req t)) -> Dynamic t BaseUrl
+                       -> ClientMulti t m layout f tag
 
-instance (HasClientMulti t m a f tag, HasClientMulti t m b f tag) => HasClientMulti t m (a :<|> b) f tag where
-  type ClientMulti t m (a :<|> b) f tag = ClientMulti t m a f tag :<|> ClientMulti t m b f tag
+
+------------------------------------------------------------------------------
+instance (HasClientMulti t m a f tag, HasClientMulti t m b f tag) =>
+    HasClientMulti t m (a :<|> b) f tag where
+  type ClientMulti t m (a :<|> b) f tag = ClientMulti t m a f tag :<|>
+                                          ClientMulti t m b f tag
   clientWithRouteMulti Proxy q f tag reqs baseurl =
     clientWithRouteMulti (Proxy :: Proxy a) q f tag reqs baseurl :<|>
     clientWithRouteMulti (Proxy :: Proxy b) q f tag reqs baseurl
 
 
-instance (SupportsServantReflex t m, ToHttpApiData a, HasClientMulti t m sublayout f tag, Applicative f)
+------------------------------------------------------------------------------
+instance (SupportsServantReflex t m,
+          ToHttpApiData a,
+          HasClientMulti t m sublayout f tag,
+          Applicative f)
       => HasClientMulti t m (Capture capture a :> sublayout) f tag where
 
   type ClientMulti t m (Capture capture a :> sublayout) f tag =
@@ -88,9 +104,11 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClientMulti t m sublayo
 
   clientWithRouteMulti l q f tag reqs baseurl vals = clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
     where
-      reqs' = prependToPathParts <$> ps <*> reqs
+      reqs' = (prependToPathParts <$> ps <*>) <$> reqs
       ps    = (fmap .  fmap . fmap) toUrlPiece vals
 
+
+------------------------------------------------------------------------------
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
@@ -107,8 +125,10 @@ instance {-# OVERLAPPABLE #-}
   clientWithRouteMulti _ _ f tag reqs baseurl =
     performRequestsCT (Proxy :: Proxy ct) method reqs' baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-            reqs' = (\r -> r { reqMethod = method }) <$> reqs
+            reqs' = fmap (\r -> r { reqMethod = method }) <$> reqs
 
+
+------------------------------------------------------------------------------
 -- -- VERB (No content) --
 instance {-# OVERLAPPING #-}
   (ReflectMethod method, SupportsServantReflex t m, Traversable f) =>
@@ -121,6 +141,8 @@ instance {-# OVERLAPPING #-}
     performRequestsNoBody method req baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
+
+------------------------------------------------------------------------------
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
@@ -134,30 +156,36 @@ instance {-# OVERLAPPABLE #-}
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
     resp <- performRequestsCT (Proxy :: Proxy ct) method reqs' baseurl triggers :: m (Event t (tag, f (ReqResult a)))
     return $ (fmap . fmap) toHeaders <$> resp
-    where reqs' = ffor reqs $ \r -> r { respHeaders =
-                                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
-                                      }
+    where
+      reqs' = fmap (\r ->
+                r { respHeaders =
+                    OnlyHeaders (Set.fromList
+                                 (buildHeaderKeysTo (Proxy :: Proxy ls)))
+                  }) <$> reqs
 
 
+------------------------------------------------------------------------------
 instance {-# OVERLAPPABLE #-}
   ( BuildHeadersTo ls,
     BuildHeaderKeysTo ls,
     ReflectMethod method,
     SupportsServantReflex t m,
     Traversable f
-  ) => HasClientMulti t m (Verb method status cts (Headers ls NoContent)) f tag where
+  ) => HasClientMulti t m (Verb method status
+                           cts (Headers ls NoContent)) f tag where
   type ClientMulti t m (Verb method status cts (Headers ls NoContent)) f tag
     = Event t tag -> m (Event t (tag, f (ReqResult (Headers ls NoContent))))
   clientWithRouteMulti Proxy _ _ _ reqs baseurl triggers = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
     resp <- performRequestsNoBody method reqs' baseurl triggers
     return $ (fmap . fmap) toHeaders <$> resp
-    where reqs' = ffor reqs $ \req ->
+    where reqs' = fmap (\req ->
                     req {respHeaders = OnlyHeaders (Set.fromList
                          (buildHeaderKeysTo (Proxy :: Proxy ls)))
-                        }
+                        }) <$> reqs
 
 
+------------------------------------------------------------------------------
 instance (KnownSymbol sym,
           ToHttpApiData a,
           HasClientMulti t m sublayout f tag,
@@ -175,10 +203,11 @@ instance (KnownSymbol sym,
                     reqs'
                     baseurl
     where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
-          reqs' = (\eVal req -> Servant.Common.Req.addHeader hname eVal req)
-                  <$> eVals <*> reqs
+          reqs' = ((\eVal req -> Servant.Common.Req.addHeader hname eVal req)
+                  <$> eVals <*>) <$> reqs
 
 
+------------------------------------------------------------------------------
 instance HasClientMulti t m sublayout f tag
   => HasClientMulti t m (HttpVersion :> sublayout) f tag where
 
@@ -189,11 +218,17 @@ instance HasClientMulti t m sublayout f tag
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag
 
 
-instance (KnownSymbol sym, ToHttpApiData a, HasClientMulti t m sublayout f tag, Reflex t, Traversable f, Applicative f)
+------------------------------------------------------------------------------
+instance (KnownSymbol sym,
+          ToHttpApiData a,
+          HasClientMulti t m sublayout f tag,
+          Reflex t,
+          Traversable f,
+          Applicative f)
       => HasClientMulti t m (QueryParam sym a :> sublayout) f tag where
 
   type ClientMulti t m (QueryParam sym a :> sublayout) f tag =
-    f (Dynamic t (QParam a)) -> ClientMulti t m sublayout f tag
+    Dynamic t (f (QParam a)) -> ClientMulti t m sublayout f tag
 
   -- if mparam = Nothing, we don't add it to the query string
   -- TODO: Check the above comment
@@ -204,7 +239,9 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClientMulti t m sublayout f tag, 
     where pname = symbolVal (Proxy :: Proxy sym)
           p prm = QueryPartParam $ fmap qParamToQueryPart prm
           paramPair mp = (T.pack pname, p mp)
-          reqs' = (\param req -> req {qParams = paramPair param : qParams req})
+          -- reqs' = (\params reqs -> (\req param -> req {qParams = paramPair param : qParams req}) <$> reqs <*> params)
+          --         <$> mparams <*> reqs
+          reqs' = liftA2 (\(pr :: QParam a) (r :: Req t) -> r { qParams = paramPair (constDyn pr) : qParams r })
                   <$> mparams <*> reqs
 
 
@@ -217,16 +254,17 @@ instance (KnownSymbol sym,
       => HasClientMulti t m (QueryParams sym a :> sublayout) f tag where
 
   type ClientMulti t m (QueryParams sym a :> sublayout) f tag =
-    f (Dynamic t [a]) -> ClientMulti t m sublayout f tag
+    Dynamic t (f [a]) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl paramlists =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
 
-      where req' l r = r { qParams =  (T.pack pname, params' l) : qParams r }
+      where req' l r = r { qParams =  (T.pack pname, params' (constDyn l)) : qParams r }
             pname   = symbolVal (Proxy :: Proxy sym)
             params' l = QueryPartParams $ (fmap . fmap) (toQueryParam)
                         l
-            reqs' = req' <$> paramlists <*> reqs
+            reqs' = liftA2 req' <$> paramlists <*> reqs
+            -- reqs' = req' <$> paramlists <*> reqs
 
 
 instance (KnownSymbol sym,
@@ -237,15 +275,15 @@ instance (KnownSymbol sym,
       => HasClientMulti t m (QueryFlag sym :> sublayout) f tag where
 
   type ClientMulti t m (QueryFlag sym :> sublayout) f tag =
-    f (Dynamic t Bool) -> ClientMulti t m sublayout f tag
+    Dynamic t (f Bool) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl flags =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
 
-    where req' f req = req { qParams = thisPair f : qParams req }
+    where req' f req = req { qParams = thisPair (constDyn f) : qParams req }
           thisPair f = (T.pack pName, QueryPartFlag f) :: (Text, QueryPart t)
           pName      = symbolVal (Proxy :: Proxy sym)
-          reqs'      = req' <$> flags <*> reqs
+          reqs'      = liftA2 req' <$> flags <*> reqs
 
 
 instance (SupportsServantReflex t m,
@@ -272,17 +310,17 @@ instance (MimeRender ct a,
       => HasClientMulti t m (ReqBody (ct ': cts) a :> sublayout) f tag where
 
   type ClientMulti t m (ReqBody (ct ': cts) a :> sublayout) f tag =
-    f (Dynamic t (Either Text a)) -> ClientMulti t m sublayout f tag
+    Dynamic t (f (Either Text a)) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl bodies =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
-       where req'        b r = r { reqBody = bodyBytesCT b }
+       where req'        b r = r { reqBody = bodyBytesCT (constDyn b) }
              ctProxy         = Proxy :: Proxy ct
              ctString        = T.pack $ show $ contentType ctProxy
              bodyBytesCT b   = Just $ (fmap . fmap)
                                (\b' -> (mimeRender ctProxy b', ctString))
                                b
-             reqs'           = req' <$> bodies <*> reqs
+             reqs'           = liftA2 req' <$> bodies <*> reqs
 
 
 instance (KnownSymbol path,
@@ -293,7 +331,7 @@ instance (KnownSymbol path,
 
   clientWithRouteMulti Proxy q f tag reqs baseurl =
      clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag
-                     (prependToPathParts (pure (Right $ T.pack p)) <$> reqs)
+                     (fmap (prependToPathParts (pure (Right $ T.pack p))) <$> reqs)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
@@ -323,11 +361,11 @@ instance HasClientMulti t m api f tag => HasClientMulti t m (IsSecure :> api) f 
 instance (HasClientMulti t m api f tag, Reflex t, Traversable f, Applicative f)
       => HasClientMulti t m (BasicAuth realm usr :> api) f tag where
 
-  type ClientMulti t m (BasicAuth realm usr :> api) f tag = f (Dynamic t (Maybe BasicAuthData))
+  type ClientMulti t m (BasicAuth realm usr :> api) f tag = Dynamic t (f (Maybe BasicAuthData))
                                                -> ClientMulti t m api f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl authdatas =
     clientWithRouteMulti (Proxy :: Proxy api) q f tag reqs' baseurl
       where
-        req'  a r = r { authData = Just a }
-        reqs' = req' <$> authdatas <*> reqs
+        req'  a r = r { authData = Just (constDyn a) }
+        reqs' = liftA2 req' <$> authdatas <*> reqs

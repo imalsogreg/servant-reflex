@@ -1,16 +1,16 @@
-{-# LANGUAGE CPP                  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE InstanceSigs         #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- #include "overlapping-compat.h"
 -- | This module provides 'client' which can automatically generate
@@ -25,42 +25,42 @@ module Servant.Reflex
 
 -------------------------------------------------------------------------------
 import           Control.Applicative
-import           Data.Monoid             ((<>))
-import qualified Data.Set                as Set
-import qualified Data.Text.Encoding      as E
-import           Data.CaseInsensitive    (mk)
-import           Data.Proxy              (Proxy (..))
-import qualified Data.Map                as Map
-import           Data.Text               (Text)
-import qualified Data.Text               as T
-import           GHC.TypeLits            (KnownSymbol, symbolVal)
-import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
-                                          BasicAuthData, BuildHeadersTo(..),
-                                          Capture, contentType, Header,
-                                          Headers(..), HttpVersion, IsSecure,
-                                          MimeRender(..), MimeUnrender,
-                                          NoContent, QueryFlag, QueryParam,
-                                          QueryParams, Raw, ReflectMethod(..),
-                                          RemoteHost, ReqBody,
-                                          ToHttpApiData(..), Vault, Verb)
-import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
-                                          showBaseUrl,
-                                          SupportsServantReflex)
-import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
-                                          QueryPart(..), addHeader, authData,
-                                          defReq, prependToPathParts,
-                                          performRequestCT,
-                                          performRequestNoBody,
-                                          qParamToQueryPart, reqBody,
-                                          reqSuccess, reqFailure,
-                                          reqMethod, respHeaders, response,
-                                          qParams)
-import           Reflex.Dom              (Dynamic, Event, Reflex,
-                                          XhrRequest(..),
-                                          XhrResponseHeaders(..),
-                                          XhrResponse(..), ffor, fmapMaybe,
-                                          leftmost, performRequestAsync,
-                                          tagPromptlyDyn )
+import           Data.Aeson             (ToJSON, encode)
+import           Data.CaseInsensitive   (mk)
+import qualified Data.Map               as Map
+import           Data.Monoid            ((<>))
+import           Data.Proxy             (Proxy (..))
+import qualified Data.Set               as Set
+import           Data.Text              (Text)
+import qualified Data.Text              as T
+import qualified Data.Text.Encoding     as E
+import           Debug.Trace            (traceShow)
+import           GHC.TypeLits           (KnownSymbol, symbolVal)
+import           Reflex.Dom             (Dynamic, Event, Reflex,
+                                         XhrRequest (..), XhrResponse (..),
+                                         XhrResponseHeaders (..), ffor,
+                                         fmapMaybe, leftmost,
+                                         performRequestAsync, tagPromptlyDyn)
+import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
+                                         BasicAuthData, BuildHeadersTo (..),
+                                         Capture, Header, Headers (..),
+                                         HttpVersion, IsSecure, MimeRender (..),
+                                         MimeUnrender, NoContent, QueryFlag,
+                                         QueryParam, QueryParams, Raw,
+                                         ReflectMethod (..), RemoteHost,
+                                         ReqBody, ToHttpApiData (..), Vault,
+                                         Verb, contentType)
+import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
+                                         SupportsServantReflex, baseUrlWidget,
+                                         showBaseUrl)
+import           Servant.Common.Req     (QParam (..), QueryPart (..), Req,
+                                         ReqResult (..), addHeader, authData,
+                                         defReq, performRequestCT,
+                                         performRequestNoBody,
+                                         prependToPathParts, qParamToQueryPart,
+                                         qParams, reqBody, reqFailure,
+                                         reqMethod, reqSuccess, respHeaders,
+                                         response)
 
 -- * Accessing APIs as a Client
 
@@ -79,7 +79,7 @@ import           Reflex.Dom              (Dynamic, Event, Reflex,
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
 client :: (HasClient t m layout)
        => Proxy layout -> Proxy m -> Dynamic t BaseUrl -> Client t m layout
-client p q baseurl = clientWithRoute p q defReq baseurl
+client p q = clientWithRoute p q defReq
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
@@ -118,7 +118,7 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout)
                     (prependToPathParts p req)
                     baseurl
 
-    where p = (fmap . fmap) (toUrlPiece) val
+    where p = (fmap . fmap) toUrlPiece val
 
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
@@ -129,8 +129,8 @@ instance {-# OVERLAPPABLE #-}
     Event t () -> m (Event t (ReqResult a))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
-  clientWithRoute Proxy _ req baseurl =
-    performRequestCT (Proxy :: Proxy ct) method req' baseurl
+  clientWithRoute Proxy _ req =
+    performRequestCT (Proxy :: Proxy ct) method req'
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
@@ -142,8 +142,8 @@ instance {-# OVERLAPPING #-}
     Event t () -> m (Event t (ReqResult NoContent))
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
-  clientWithRoute Proxy _ req baseurl =
-    performRequestNoBody method req baseurl
+  clientWithRoute Proxy _ =
+    performRequestNoBody method
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 toHeaders :: BuildHeadersTo ls => ReqResult a -> ReqResult (Headers ls a)
@@ -163,7 +163,7 @@ instance {-# OVERLAPPABLE #-} BuildHeaderKeysTo '[]
 
 instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
   => BuildHeaderKeysTo '[(Header h v) ': xs] where
-  buildHeaderKeysTo _ = (T.pack $ symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
+  buildHeaderKeysTo _ = T.pack (symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
 
 -- HEADERS Verb (Content) --
 -- Headers combinator not treated in fully general case,
@@ -237,8 +237,7 @@ instance HasClient t m sublayout
   type Client t m (HttpVersion :> sublayout) =
     Client t m sublayout
 
-  clientWithRoute Proxy q =
-    clientWithRoute (Proxy :: Proxy sublayout) q
+  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy sublayout)
 
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
@@ -323,7 +322,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout, Reflex t)
 
       where req'    = req { qParams =  (T.pack pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' = QueryPartParams $ (fmap . fmap) (toQueryParam)
+            params' = QueryPartParams $ (fmap . fmap) toQueryParam
                         paramlist
 
 
@@ -415,7 +414,7 @@ tattle = either Just (const Nothing)
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
 
-instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
+instance (Show a, ToJSON a, MimeRender ct a, HasClient t m sublayout, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) =
@@ -434,30 +433,26 @@ instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
 instance (KnownSymbol path, HasClient t m sublayout, Reflex t) => HasClient t m (path :> sublayout) where
   type Client t m (path :> sublayout) = Client t m sublayout
 
-  clientWithRoute Proxy q req baseurl =
+  clientWithRoute Proxy q req =
      clientWithRoute (Proxy :: Proxy sublayout) q
                      (prependToPathParts (pure (Right $ T.pack p)) req)
-                     baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
 
 instance HasClient t m api => HasClient t m (Vault :> api) where
   type Client t m (Vault :> api) = Client t m api
 
-  clientWithRoute Proxy q req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q req baseurl
+  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy api)
 
 instance HasClient t m api => HasClient t m (RemoteHost :> api) where
   type Client t m (RemoteHost :> api) = Client t m api
 
-  clientWithRoute Proxy q req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q req baseurl
+  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy api)
 
 instance HasClient t m api => HasClient t m (IsSecure :> api) where
   type Client t m (IsSecure :> api) = Client t m api
 
-  clientWithRoute Proxy q req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q req baseurl
+  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy api)
 
 instance (HasClient t m api, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) where

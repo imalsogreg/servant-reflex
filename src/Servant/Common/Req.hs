@@ -210,15 +210,9 @@ performRequest reqMeth req reqHost trigger = do
 
   return (resps, badReqs)
 
-#ifdef ghcjs_HOST_OS
-type XhrPayload = String
-bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = BL.unpack
-#else
 type XhrPayload = T.Text
 bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = T.pack . BL.unpack
-#endif
+bytesToPayload = TE.decodeUtf8 . BL.toStrict
 
 performRequestNoBody :: forall t m .(SupportsServantReflex t m)
                      => Text

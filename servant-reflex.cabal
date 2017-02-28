@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.3.0
+Version: 0.2.1
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: AllRightsReserved
@@ -21,7 +21,6 @@ library
 
   hs-source-dirs: src
   build-depends:
-    aeson,
     base                >= 4.8  && < 4.10,
     bytestring          >= 0.10 && < 0.11,
     case-insensitive    >= 1.2.0.4 && < 1.3,

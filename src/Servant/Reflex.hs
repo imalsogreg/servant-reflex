@@ -25,7 +25,6 @@ module Servant.Reflex
 
 -------------------------------------------------------------------------------
 import           Control.Applicative
-import           Data.Aeson             (ToJSON, encode)
 import           Data.CaseInsensitive   (mk)
 import qualified Data.Map               as Map
 import           Data.Monoid            ((<>))
@@ -34,7 +33,6 @@ import qualified Data.Set               as Set
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Text.Encoding     as E
-import           Debug.Trace            (traceShow)
 import           GHC.TypeLits           (KnownSymbol, symbolVal)
 import           Reflex.Dom             (Dynamic, Event, Reflex,
                                          XhrRequest (..), XhrResponse (..),
@@ -414,7 +412,7 @@ tattle = either Just (const Nothing)
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
 
-instance (Show a, ToJSON a, MimeRender ct a, HasClient t m sublayout, Reflex t)
+instance (MimeRender ct a, HasClient t m sublayout, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) =

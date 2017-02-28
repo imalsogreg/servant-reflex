@@ -42,7 +42,7 @@ run = do
   el "br" (return ())
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> doRaw) =
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> doRaw) =
         client api (Proxy :: Proxy m) url
 
   elClass "div" "demo-group" $ do
@@ -89,11 +89,11 @@ run = do
   elClass "div" "demo-group" $ do
     text "A Double to double"
     el "br" $ return ()
-    dblinp <- fmap value $ divClass "double-input" $ textInput def
-    dblBtn <- divClass "double-button" $ button "Double it"
+    dblinp  <- fmap value $ divClass "double-input" $ textInput def
+    dblBtn  <- divClass "double-button" $ button "Double it"
     dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $
                           dblinp) dblBtn
-    divClass "double-errors" $ dynText =<< 
+    divClass "double-errors" $ dynText =<<
       holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
     el "br" (return ())
     divClass "double-result" $ el "p" $ dynText =<<
@@ -108,6 +108,17 @@ run = do
     dynText =<< holdDyn "No res yet" (fmap tShow $
                                       fmapMaybe reqSuccess $
                                       multiResp)
+
+  el "br" $ return ()
+
+  elClass "div" "demo-group" $ do
+    text "JSON Unicode encoding test"
+    txt <- value <$> textInput def
+    ev  <- button "Question"
+    let dQ = Right . Question <$> traceDyn "will send: " txt
+    rr  <- qna dQ ev
+    el "p" $
+      dynText =<< holdDyn "No Answer" (unAnswer <$> fmapMaybe reqSuccess rr)
 
 showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =

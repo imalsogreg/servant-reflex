@@ -24,7 +24,7 @@ executable back
                      , snap >= 1.0 && < 1.1
                      , snap-server  >= 1.0 && < 1.1
                      , snap-core  >= 1.0 && < 1.1
-                     , servant >= 0.10 && < 0.11
+                     , servant >= 0.8 && < 0.11
                      , servant-snap >= 0.7.2 && < 0.8
                      , text  >= 1.2 && < 1.3
   -- hs-source-dirs:

@@ -12,4 +12,4 @@
 	url = https://github.com/haskell-servant/servant
 [submodule "deps/servant-snap"]
 	path = deps/servant-snap
-	url = https://github.com/schell/servant-snap
+	url = https://github.com/haskell-servant/servant-snap

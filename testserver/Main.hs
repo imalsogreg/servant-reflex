@@ -60,7 +60,9 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> 
                  | otherwise             = T.intercalate ", " (L.init greetings)
                                        <> ", and " <> L.last greetings <> ", "
            return . modifier $ greetPart <> n
-        dbl x = return $ x * 2
+        dbl x = if x `elem` [4,13]
+                then throwError $ err500 { errBody = "No unlucky numbers please" }
+                else return $ x * 2
         multi = return . bool "Box unchecked" "Box Checked"
         qna q = do
           liftIO $ do

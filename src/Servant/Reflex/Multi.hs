@@ -1,69 +1,74 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE CPP                  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE InstanceSigs         #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
-module Servant.Reflex.Multi
-    ( clientA
+module Servant.Reflex.Multi (
+    -- * Compute servant client functions
+    clientA
+    , BaseUrl(..)
+    , Scheme(..)
+
+    -- * Build QueryParam arguments
+    , QParam(..)
+
+
+    -- * Access response data
+    , ReqResult(..)
+    , reqSuccess
+    , reqSuccess'
+    , reqFailure
+    , response
+
     , HasClientMulti(..)
     ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative
-import           Control.Arrow           (second)
-import           Data.Functor.Compose
-import           Data.Monoid             ((<>))
-import qualified Data.Set                as Set
-import qualified Data.Text.Encoding      as E
-import           Data.CaseInsensitive    (mk)
-import           Data.Proxy              (Proxy (..))
-import qualified Data.Map                as Map
-import           Data.Text               (Text)
-import qualified Data.Text               as T
-import           GHC.TypeLits            (KnownSymbol, symbolVal)
-import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
-                                          BasicAuthData, BuildHeadersTo(..),
-                                          Capture, contentType, Header,
-                                          Headers(..), HttpVersion, IsSecure,
-                                          MimeRender(..), MimeUnrender,
-                                          NoContent, QueryFlag, QueryParam,
-                                          QueryParams, Raw, ReflectMethod(..),
-                                          RemoteHost, ReqBody,
-                                          ToHttpApiData(..), Vault, Verb)
+import           Control.Applicative    (liftA2)
+import           Data.Functor.Compose   (Compose (..), getCompose)
+import           Data.Proxy             (Proxy (..))
+import qualified Data.Set               as Set
+import           Data.Text              (Text)
+import qualified Data.Text              as T
+import qualified Data.Text.Encoding     as E
+import           GHC.TypeLits           (KnownSymbol, symbolVal)
+import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
+                                         BasicAuthData, BuildHeadersTo (..),
+                                         Capture, Header, Headers (..),
+                                         HttpVersion, IsSecure, MimeRender (..),
+                                         MimeUnrender, NoContent, QueryFlag,
+                                         QueryParam, QueryParams, Raw,
+                                         ReflectMethod (..), RemoteHost,
+                                         ReqBody, ToHttpApiData (..), Vault,
+                                         Verb, contentType)
 
-import           Reflex.Dom              (Dynamic, Event, Reflex,
-                                          XhrRequest(..),
-                                          XhrResponseHeaders(..),
-                                          XhrResponse(..), constDyn, ffor, fmapMaybe,
-                                          leftmost, performRequestAsync, attachPromptlyDynWith,
-                                          tagPromptlyDyn )
+import           Reflex.Dom             (Dynamic, Event, Reflex,
+                                         XhrRequest (..),
+                                         XhrResponseHeaders (..),
+                                         attachPromptlyDynWith, constDyn)
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
-                                          showBaseUrl,
-                                          SupportsServantReflex)
-import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
-                                          QueryPart(..), addHeader, authData,
-                                          defReq, prependToPathParts,
-                                          -- performRequestCT,
-                                          performRequestsCT,
-                                          -- performRequestNoBody,
-                                          performRequestsNoBody,
-                                          performSomeRequestsAsync,
-                                          qParamToQueryPart, reqBody,
-                                          reqSuccess, reqFailure,
-                                          reqMethod, respHeaders, response,
-                                          qParams)
-import          Servant.Reflex            (BuildHeaderKeysTo(..), toHeaders)
+import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
+                                         SupportsServantReflex)
+import           Servant.Common.Req     (QParam (..), QueryPart (..), Req,
+                                         ReqResult (..), addHeader, authData,
+                                         defReq, performRequestsCT,
+                                         performRequestsNoBody,
+                                         performSomeRequestsAsync,
+                                         prependToPathParts, qParamToQueryPart,
+                                         qParams, reqBody, reqFailure,
+                                         reqMethod, reqSuccess, reqSuccess',
+                                         respHeaders, response)
+import           Servant.Reflex         (BuildHeaderKeysTo (..), toHeaders)
 
 
 ------------------------------------------------------------------------------
@@ -102,7 +107,8 @@ instance (SupportsServantReflex t m,
   type ClientMulti t m (Capture capture a :> sublayout) f tag =
     f (Dynamic t (Either Text a)) -> ClientMulti t m sublayout f tag
 
-  clientWithRouteMulti l q f tag reqs baseurl vals = clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
+  clientWithRouteMulti _ q f tag reqs baseurl vals =
+    clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
     where
       reqs' = (prependToPathParts <$> ps <*>) <$> reqs
       ps    = (fmap .  fmap . fmap) toUrlPiece vals
@@ -122,7 +128,7 @@ instance {-# OVERLAPPABLE #-}
   type ClientMulti t m (Verb method status cts' a) f tag =
     Event t tag -> m (Event t (f (ReqResult tag a)))
 
-  clientWithRouteMulti _ _ f tag reqs baseurl =
+  clientWithRouteMulti _ _ _ _ reqs baseurl =
     performRequestsCT (Proxy :: Proxy ct) method reqs' baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             reqs' = fmap (\r -> r { reqMethod = method }) <$> reqs
@@ -137,7 +143,7 @@ instance {-# OVERLAPPING #-}
     Event t tag -> m (Event t (f (ReqResult tag NoContent)))
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
-  clientWithRouteMulti Proxy _ _ tag req baseurl =
+  clientWithRouteMulti Proxy _ _ _ req baseurl =
     performRequestsNoBody method req baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
@@ -223,7 +229,6 @@ instance (KnownSymbol sym,
           ToHttpApiData a,
           HasClientMulti t m sublayout f tag,
           Reflex t,
-          Traversable f,
           Applicative f)
       => HasClientMulti t m (QueryParam sym a :> sublayout) f tag where
 
@@ -249,7 +254,6 @@ instance (KnownSymbol sym,
           ToHttpApiData a,
           HasClientMulti t m sublayout f tag,
           Reflex t,
-          Traversable f,
           Applicative f)
       => HasClientMulti t m (QueryParams sym a :> sublayout) f tag where
 
@@ -264,21 +268,19 @@ instance (KnownSymbol sym,
             params' l = QueryPartParams $ (fmap . fmap) (toQueryParam)
                         l
             reqs' = liftA2 req' <$> paramlists <*> reqs
-            -- reqs' = req' <$> paramlists <*> reqs
 
 
 instance (KnownSymbol sym,
           HasClientMulti t m sublayout f tag,
           Reflex t,
-          Traversable f,
           Applicative f)
       => HasClientMulti t m (QueryFlag sym :> sublayout) f tag where
 
   type ClientMulti t m (QueryFlag sym :> sublayout) f tag =
     Dynamic t (f Bool) -> ClientMulti t m sublayout f tag
 
-  clientWithRouteMulti Proxy q f tag reqs baseurl flags =
-    clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl
+  clientWithRouteMulti Proxy q f' tag reqs baseurl flags =
+    clientWithRouteMulti (Proxy :: Proxy sublayout) q f' tag reqs' baseurl
 
     where req' f req = req { qParams = thisPair (constDyn f) : qParams req }
           thisPair f = (T.pack pName, QueryPartFlag f) :: (Text, QueryPart t)
@@ -292,10 +294,9 @@ instance (SupportsServantReflex t m,
                                  -> Event t tag
                                  -> m (Event t (f (ReqResult tag ())))
 
-  clientWithRouteMulti _ _ _ _ oldReqs baseurl rawReqs triggers = do
+  clientWithRouteMulti _ _ _ _ _ _ rawReqs triggers = do
     let rawReqs' = sequence rawReqs :: Dynamic t (f (Either Text (XhrRequest ())))
         rawReqs'' = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) rawReqs' triggers
---     resps <- fmap (second (fmap aux) . getCompose) <$> performSomeRequestsAsync rawReqs''
     resps <- fmap (fmap aux . sequenceA . getCompose) <$> performSomeRequestsAsync rawReqs''
     return resps
     where
@@ -306,7 +307,6 @@ instance (SupportsServantReflex t m,
 instance (MimeRender ct a,
           HasClientMulti t m sublayout f tag,
           Reflex t,
-          Traversable f,
           Applicative f)
       => HasClientMulti t m (ReqBody (ct ': cts) a :> sublayout) f tag where
 
@@ -359,7 +359,7 @@ instance HasClientMulti t m api f tag => HasClientMulti t m (IsSecure :> api) f 
     clientWithRouteMulti (Proxy :: Proxy api) q f tag reqs baseurl
 
 
-instance (HasClientMulti t m api f tag, Reflex t, Traversable f, Applicative f)
+instance (HasClientMulti t m api f tag, Reflex t, Applicative f)
       => HasClientMulti t m (BasicAuth realm usr :> api) f tag where
 
   type ClientMulti t m (BasicAuth realm usr :> api) f tag = Dynamic t (f (Maybe BasicAuthData))

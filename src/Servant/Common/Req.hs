@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -8,13 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-{-# LANGUAGE EmptyCase           #-}
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
-import           Control.Arrow              (second)
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Bifunctor             (first)
@@ -27,42 +23,65 @@ import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
-import           Data.Traversable
-import           Reflex.Dom
-import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl, SupportsServantReflex)
+import           Data.Traversable           (forM)
+import           Reflex.Dom                 hiding (tag)
+import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
+                                             SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
 import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
 
 
+------------------------------------------------------------------------------
+-- | The result of a request event
+data ReqResult tag a
+    = ResponseSuccess tag a XhrResponse
+      -- ^ The succesfully decoded response from a request tagged with 'tag'
+    | ResponseFailure tag Text XhrResponse
+      -- ^ The failure response, which may have failed decoding or had
+      --   a non-successful response code
+    | RequestFailure  tag Text
+      -- ^ A failure to construct the request tagged with 'tag' at trigger time
 
-data ReqResult tag a = ResponseSuccess tag a XhrResponse
-                     | ResponseFailure tag Text XhrResponse
-                     | RequestFailure  tag Text
 
-instance Functor (ReqResult tag) where
-  fmap f (ResponseSuccess tag a xhr) = ResponseSuccess tag (f a) xhr
-  fmap _ (ResponseFailure tag r x)   = ResponseFailure tag r x
-  fmap _ (RequestFailure  tag r)      = RequestFailure tag r
-
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for successful responses, when you want to
+-- ignore the error case. For example:
+-- >> goodResponses <- fmapMaybe reqSuccess <$> clientFun triggers
 reqSuccess :: ReqResult tag a -> Maybe a
 reqSuccess (ResponseSuccess _ x _) = Just x
 reqSuccess _                       = Nothing
 
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor like 'reqSuccess', but keeping the request tag
 reqSuccess' :: ReqResult tag a -> Maybe (tag,a)
 reqSuccess' (ResponseSuccess tag x _) = Just (tag,x)
 reqSuccess' _                         = Nothing
 
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for any failure case
 reqFailure :: ReqResult tag a -> Maybe Text
 reqFailure (ResponseFailure _ s _) = Just s
 reqFailure (RequestFailure  _ s)   = Just s
 reqFailure _                       = Nothing
 
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for the raw XHR response
 response :: ReqResult tag a -> Maybe XhrResponse
 response (ResponseSuccess _ _ x) = Just x
 response (ResponseFailure _ _ x) = Just x
 response _                       = Nothing
+
+
+------------------------------------------------------------------------------
+instance Functor (ReqResult tag) where
+  fmap f (ResponseSuccess tag a xhr) = ResponseSuccess tag (f a) xhr
+  fmap _ (ResponseFailure tag r x)   = ResponseFailure tag r x
+  fmap _ (RequestFailure  tag r)      = RequestFailure tag r
 
 
 -------------------------------------------------------------------------------
@@ -76,10 +95,12 @@ data QParam a = QParamSome a
               | QParamInvalid Text
               -- ^ Indication that your validation failed (the request isn't valid)
 
+
 qParamToQueryPart :: ToHttpApiData a => QParam a -> Either Text (Maybe Text)
 qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
 qParamToQueryPart QNone             = Right Nothing
 qParamToQueryPart (QParamInvalid e) = Left e
+
 
 data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
                  | QueryPartParams (Dynamic t [Text])

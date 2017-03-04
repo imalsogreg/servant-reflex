@@ -17,9 +17,10 @@ import           Control.Applicative        (liftA2, liftA3)
 import           Control.Arrow              (second)
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
-import           Data.Maybe                 (catMaybes)
+import           Data.Maybe                 (catMaybes, fromMaybe)
 import           Data.Functor.Compose
 import           Data.Monoid                ((<>))
 import           Data.Proxy                 (Proxy(..))
@@ -279,15 +280,10 @@ performRequest reqMeth req reqHost trigger = do
   return (resps, badReqs)
 
 
-#ifdef ghcjs_HOST_OS
-type XhrPayload = String
-bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = BL.unpack
-#else
 type XhrPayload = T.Text
 bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = T.pack . BL.unpack
-#endif
+bytesToPayload = TE.decodeUtf8 . BL.toStrict
+
 
 performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
                      => Text
@@ -296,20 +292,10 @@ performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
                      -> Event t tag -> m (Event t (tag, ReqResult NoContent))
 performRequestNoBody reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  return $ leftmost [ fmap (ResponseSuccess NoContent) <$> resp, fmap RequestFailure <$> badReq]
+  let decodeResp = const $ Right NoContent
+  return $ leftmost [ fmap (second (evalResponse decodeResp)) resp,
+                      fmap (second RequestFailure) badReq]
 
-performRequestsNoBody :: forall t m f tag. (SupportsServantReflex t m, Traversable f)
-                     => Text
-                     -> Dynamic t (f (Req t))
-                     -> Dynamic t BaseUrl
-                     -> Event t tag -> m (Event t (tag, f (ReqResult NoContent)))
-performRequestsNoBody reqMeth reqs reqHost trigger = do
-  resp <- performRequests reqMeth reqs reqHost trigger
-  return $ (fmap . fmap) aux <$> resp
-  where
-    aux (Right x) = ResponseSuccess NoContent x
-    aux (Left  e) = RequestFailure e
-  -- return $ leftmost [ fmap (ResponseSuccess NoContent) resp, fmap RequestFailure badReq]
 
 
 performRequestCT
@@ -323,13 +309,15 @@ performRequestCT
     -> m (Event t (tag, ReqResult a))
 performRequestCT ct reqMeth req reqHost trigger = do
   (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  let decodes = ffor resp $ fmap (\xhr ->
-        ((mimeUnrender ct . BL.fromStrict . TE.encodeUtf8)
-         =<< note "No body text" (_xhrResponse_responseText xhr), xhr))
-      reqs = ffor decodes $ fmap (\case
-        (Right a, r) -> ResponseSuccess a r
-        (Left e,  r) -> ResponseFailure (T.pack e) r)
-  return $ leftmost [reqs, fmap RequestFailure <$> badReq]
+  let decodeResp x = first T.pack .
+                     mimeUnrender ct .
+                     BL.fromStrict .
+                     TE.encodeUtf8 =<< note "No body text"
+                     (_xhrResponse_responseText x)
+
+  return $ leftmost [fmap (second (evalResponse decodeResp)) resp,
+                     fmap (second RequestFailure) badReq]
+
 
 performRequestsCT
     :: (SupportsServantReflex t m,
@@ -342,14 +330,52 @@ performRequestsCT
     -> m (Event t (tag, f (ReqResult a)))
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
-  return $ fmap (second (fmap reqToResult)) resps
-  where
-    reqToResult (Left  e) = RequestFailure e
-    reqToResult (Right x) = case _xhrResponse_responseText x of
-      Nothing  -> ResponseFailure "No request body" x
-      Just bod -> case mimeUnrender ct . BL.fromStrict . TE.encodeUtf8 $ bod of
-        Left e  -> ResponseFailure (T.pack e) x
-        Right v -> ResponseSuccess v x
+  let decodeResp x = first T.pack .
+                     mimeUnrender ct .
+                     BL.fromStrict .
+                     TE.encodeUtf8 =<< note "No body text"
+                     (_xhrResponse_responseText x)
+  return $ ffor resps $ \(t, rs) ->
+      (t, ffor rs $ \r -> case r of
+              Left e  -> RequestFailure e
+              Right g -> evalResponse decodeResp g
+      )
+
+
+performRequestsNoBody
+    :: (SupportsServantReflex t m,
+        Traversable f)
+    => Text
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> Event t tag
+    -> m (Event t (tag, f (ReqResult NoContent)))
+performRequestsNoBody reqMeth reqs reqHost trigger = do
+  resps <- performRequests reqMeth reqs reqHost trigger
+  let decodeResp = const $ Right NoContent
+  return $ ffor resps $ \(t, rs) ->
+      (t, ffor rs $ \r -> case r of
+              Left e  -> RequestFailure e
+              Right g -> evalResponse decodeResp g
+      )
+
+
+
+------------------------------------------------------------------------------
+evalResponse :: (XhrResponse -> Either Text a) -> XhrResponse -> ReqResult a
+evalResponse decode xhr =
+    let okStatus   = _xhrResponse_status xhr < 400
+        errMsg = fromMaybe
+            ("Empty response with error code " <>
+                T.pack (show $ _xhrResponse_status xhr))
+            (_xhrResponse_responseText xhr)
+        respPayld  = if okStatus
+                     then either (flip ResponseFailure xhr)
+                                 (flip ResponseSuccess xhr) (decode xhr)
+                     else ResponseFailure errMsg xhr
+    in respPayld
+
+
 
 
 note :: e -> Maybe a -> Either e a

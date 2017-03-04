@@ -1,17 +1,24 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE CPP                  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE InstanceSigs         #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- #include "overlapping-compat.h"
 -- | This module provides 'client' which can automatically generate
@@ -69,6 +76,7 @@ import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
                                           reqSuccess, reqFailure,
                                           reqMethod, respHeaders, response,
                                           qParams)
+
 
 -- * Accessing APIs as a Client
 
@@ -177,7 +185,7 @@ instance {-# OVERLAPPABLE #-} BuildHeaderKeysTo '[]
 
 instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
   => BuildHeaderKeysTo '[(Header h v) ': xs] where
-  buildHeaderKeysTo _ = (T.pack $ symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
+  buildHeaderKeysTo _ = T.pack (symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
 
 -- HEADERS Verb (Content) --
 -- Headers combinator not treated in fully general case,
@@ -258,7 +266,6 @@ instance HasClient t m sublayout tag
 
   clientWithRoute Proxy q t =
     clientWithRoute (Proxy :: Proxy sublayout) q t
-
 
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
@@ -345,7 +352,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
 
       where req'    = req { qParams =  (T.pack pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' = QueryPartParams $ (fmap . fmap) (toQueryParam)
+            params' = QueryPartParams $ (fmap . fmap) toQueryParam
                         paramlist
 
 
@@ -453,8 +460,7 @@ instance (KnownSymbol path, HasClient t m sublayout tag, Reflex t) => HasClient 
 
   clientWithRoute Proxy q t req baseurl =
      clientWithRoute (Proxy :: Proxy sublayout) q t
-                     (prependToPathParts (pure (Right $ T.pack p)) req)
-                     baseurl
+                     (prependToPathParts (pure (Right $ T.pack p)) req) baseurl
 
     where p = symbolVal (Proxy :: Proxy path)
 

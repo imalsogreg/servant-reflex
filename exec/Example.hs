@@ -87,8 +87,8 @@ run = mdo
   el "br" (return ())
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> doRaw) =
-        client api (Proxy :: Proxy m) (Proxy :: Proxy Int) url
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> doRaw) =
+        client api (Proxy :: Proxy m) url
 
   (unitBtn, intBtn) <- elClass "div" "demo-group" $ do
     unitBtn  <- divClass "unit-button" $ button "Get unit"
@@ -159,6 +159,17 @@ run = mdo
     return mpGo
 
   return ()
+
+  el "br" $ return ()
+
+  elClass "div" "demo-group" $ do
+    text "JSON Unicode encoding test"
+    txt <- value <$> textInput def
+    ev  <- button "Question"
+    let dQ = Right . Question <$> traceDyn "will send: " txt
+    rr  <- qna dQ ev
+    el "p" $
+      dynText =<< holdDyn "No Answer" (unAnswer <$> fmapMaybe reqSuccess rr)
 
 showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =

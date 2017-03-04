@@ -37,28 +37,32 @@ import           Servant.API.BasicAuth
 
 
 
-data ReqResult a = ResponseSuccess a XhrResponse
-                 | ResponseFailure Text XhrResponse
-                 | RequestFailure Text
+data ReqResult tag a = ResponseSuccess tag a XhrResponse
+                     | ResponseFailure tag Text XhrResponse
+                     | RequestFailure  tag Text
 
-instance Functor ReqResult where
-  fmap f (ResponseSuccess a xhr) = ResponseSuccess (f a) xhr
-  fmap _ (ResponseFailure r x)   = ResponseFailure r x
-  fmap _ (RequestFailure r)      = RequestFailure r
+instance Functor (ReqResult tag) where
+  fmap f (ResponseSuccess tag a xhr) = ResponseSuccess tag (f a) xhr
+  fmap _ (ResponseFailure tag r x)   = ResponseFailure tag r x
+  fmap _ (RequestFailure  tag r)      = RequestFailure tag r
 
-reqSuccess :: ReqResult a -> Maybe a
-reqSuccess (ResponseSuccess x _) = Just x
-reqSuccess _                     = Nothing
+reqSuccess :: ReqResult tag a -> Maybe a
+reqSuccess (ResponseSuccess _ x _) = Just x
+reqSuccess _                       = Nothing
 
-reqFailure :: ReqResult a -> Maybe Text
-reqFailure (ResponseFailure s _) = Just s
-reqFailure (RequestFailure s)    = Just s
-reqFailure _                     = Nothing
+reqSuccess' :: ReqResult tag a -> Maybe (tag,a)
+reqSuccess' (ResponseSuccess tag x _) = Just (tag,x)
+reqSuccess' _                         = Nothing
 
-response :: ReqResult a -> Maybe XhrResponse
-response (ResponseSuccess _ x) = Just x
-response (ResponseFailure _ x) = Just x
-response _                     = Nothing
+reqFailure :: ReqResult tag a -> Maybe Text
+reqFailure (ResponseFailure _ s _) = Just s
+reqFailure (RequestFailure  _ s)   = Just s
+reqFailure _                       = Nothing
+
+response :: ReqResult tag a -> Maybe XhrResponse
+response (ResponseSuccess _ _ x) = Just x
+response (ResponseFailure _ _ x) = Just x
+response _                       = Nothing
 
 
 -------------------------------------------------------------------------------
@@ -285,38 +289,39 @@ bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = TE.decodeUtf8 . BL.toStrict
 
 
-performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
-                     => Text
-                     -> Req t
-                     -> Dynamic t BaseUrl
-                     -> Event t tag -> m (Event t (tag, ReqResult NoContent))
-performRequestNoBody reqMeth req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  let decodeResp = const $ Right NoContent
-  return $ leftmost [ fmap (second (evalResponse decodeResp)) resp,
-                      fmap (second RequestFailure) badReq]
+-- performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
+--                      => Text
+--                      -> Req t
+--                      -> Dynamic t BaseUrl
+--                      -> Event t tag -> m (Event t (ReqResult tag NoContent))
+-- performRequestNoBody reqMeth req reqHost trigger = do
+--   (resp, badReq) <- performRequest reqMeth req reqHost trigger
+--   let decodeResp = const $ Right NoContent
+--   return $ leftmost [ fmap (evalResponse decodeResp) resp
+--                     , fmap (uncurry RequestFailure) badReq
+--                     ]
 
 
+-- performRequestCT
+--     :: (SupportsServantReflex t m,
+--         MimeUnrender ct a)
+--     => Proxy ct
+--     -> Text
+--     -> Req t
+--     -> Dynamic t BaseUrl
+--     -> Event t tag
+--     -> m (Event t (ReqResult tag a))
+-- performRequestCT ct reqMeth req reqHost trigger = do
+--   (resp, badReq) <- performRequest reqMeth req reqHost trigger
+--   let decodeResp x = first T.pack .
+--                      mimeUnrender ct .
+--                      BL.fromStrict .
+--                      TE.encodeUtf8 =<< note "No body text"
+--                      (_xhrResponse_responseText x)
 
-performRequestCT
-    :: (SupportsServantReflex t m,
-        MimeUnrender ct a)
-    => Proxy ct
-    -> Text
-    -> Req t
-    -> Dynamic t BaseUrl
-    -> Event t tag
-    -> m (Event t (tag, ReqResult a))
-performRequestCT ct reqMeth req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  let decodeResp x = first T.pack .
-                     mimeUnrender ct .
-                     BL.fromStrict .
-                     TE.encodeUtf8 =<< note "No body text"
-                     (_xhrResponse_responseText x)
-
-  return $ leftmost [fmap (second (evalResponse decodeResp)) resp,
-                     fmap (second RequestFailure) badReq]
+--   return $ leftmost [fmap (evalResponse decodeResp) resp
+--                     , fmap (uncurry RequestFailure) badReq
+--                     ]
 
 
 performRequestsCT
@@ -327,7 +332,7 @@ performRequestsCT
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> Event t tag
-    -> m (Event t (tag, f (ReqResult a)))
+    -> m (Event t (f (ReqResult tag a)))
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp x = first T.pack .
@@ -335,11 +340,12 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
                      BL.fromStrict .
                      TE.encodeUtf8 =<< note "No body text"
                      (_xhrResponse_responseText x)
-  return $ ffor resps $ \(t, rs) ->
-      (t, ffor rs $ \r -> case r of
-              Left e  -> RequestFailure e
-              Right g -> evalResponse decodeResp g
+  return $ fmap
+      (\(t,rs) -> ffor rs $ \r -> case r of
+              Left e  -> RequestFailure t e
+              Right g -> evalResponse decodeResp (t,g)
       )
+      resps
 
 
 performRequestsNoBody
@@ -349,30 +355,32 @@ performRequestsNoBody
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> Event t tag
-    -> m (Event t (tag, f (ReqResult NoContent)))
+    -> m (Event t (f (ReqResult tag NoContent)))
 performRequestsNoBody reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp = const $ Right NoContent
-  return $ ffor resps $ \(t, rs) ->
-      (t, ffor rs $ \r -> case r of
-              Left e  -> RequestFailure e
-              Right g -> evalResponse decodeResp g
-      )
-
+  return $ ffor resps $ \(tag,rs) -> ffor rs $ \r -> case r of
+      Left e  -> RequestFailure tag e
+      Right g -> evalResponse decodeResp (tag,g)
 
 
 ------------------------------------------------------------------------------
-evalResponse :: (XhrResponse -> Either Text a) -> XhrResponse -> ReqResult a
-evalResponse decode xhr =
+evalResponse
+    :: (XhrResponse -> Either Text a)
+    -> (tag, XhrResponse)
+    -> ReqResult tag a
+evalResponse decode (tag, xhr) =
     let okStatus   = _xhrResponse_status xhr < 400
         errMsg = fromMaybe
             ("Empty response with error code " <>
                 T.pack (show $ _xhrResponse_status xhr))
             (_xhrResponse_responseText xhr)
         respPayld  = if okStatus
-                     then either (flip ResponseFailure xhr)
-                                 (flip ResponseSuccess xhr) (decode xhr)
-                     else ResponseFailure errMsg xhr
+                     then either
+                          (\e -> ResponseFailure tag e xhr)
+                          (\v -> ResponseSuccess tag v xhr)
+                          (decode xhr)
+                     else ResponseFailure tag errMsg xhr
     in respPayld
 
 

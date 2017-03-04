@@ -39,6 +39,7 @@ import           Data.Monoid             ((<>))
 import qualified Data.Set                as Set
 import qualified Data.Text.Encoding      as E
 import           Data.CaseInsensitive    (mk)
+import           Data.Functor.Identity
 import           Data.Proxy              (Proxy (..))
 import qualified Data.Map                as Map
 import           Data.Text               (Text)
@@ -57,7 +58,7 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
 import           Reflex.Dom              (Dynamic, Event, Reflex,
                                           XhrRequest(..),
                                           XhrResponseHeaders(..),
-                                          XhrResponse(..), attachPromptlyDynWith, ffor, fmapMaybe,
+                                          XhrResponse(..), attachPromptlyDynWith, constDyn, ffor, fmapMaybe,
                                           leftmost, performRequestsAsync,
                                           )
 ------------------------------------------------------------------------------
@@ -66,10 +67,10 @@ import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget
                                           SupportsServantReflex)
 import           Servant.Common.Req      (Req, ReqResult(..), QParam(..),
                                           QueryPart(..), addHeader, authData,
-                                          defReq, prependToPathParts,
-                                          performRequestCT,
+                                          defReq, evalResponse, prependToPathParts,
+                                          -- performRequestCT,
                                           performRequestsCT,
-                                          performRequestNoBody,
+                                          -- performRequestNoBody,
                                           performRequestsNoBody,
                                           performSomeRequestsAsync,
                                           qParamToQueryPart, reqBody,
@@ -146,11 +147,12 @@ instance {-# OVERLAPPABLE #-}
   (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' a) tag where
   type Client t m (Verb method status cts' a) tag =
-    Event t tag -> m (Event t (tag, ReqResult a))
+    Event t tag -> m (Event t (ReqResult tag a))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
   clientWithRoute Proxy _ _ req baseurl trigs =
-    performRequestCT (Proxy :: Proxy ct) method req' baseurl trigs
+    -- performRequestCT (Proxy :: Proxy ct) method req' baseurl trigs
+      fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity $ req') baseurl trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
@@ -160,15 +162,15 @@ instance {-# OVERLAPPING #-}
   (ReflectMethod method, SupportsServantReflex t m) =>
   HasClient t m (Verb method status cts NoContent) tag where
   type Client t m (Verb method status cts NoContent) tag =
-    Event t tag -> m (Event t (tag, ReqResult NoContent))
+    Event t tag -> m (Event t (ReqResult tag NoContent))
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
   clientWithRoute Proxy _ _ req baseurl =
-    performRequestNoBody method req baseurl
+    (fmap . fmap) runIdentity . performRequestsNoBody method (constDyn $ Identity req) baseurl
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 
-toHeaders :: BuildHeadersTo ls => ReqResult a -> ReqResult (Headers ls a)
+toHeaders :: BuildHeadersTo ls => ReqResult tag a -> ReqResult tag (Headers ls a)
 toHeaders r =
   let toBS = E.encodeUtf8
       hdrs = maybe []
@@ -199,11 +201,11 @@ instance {-# OVERLAPPABLE #-}
     SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' (Headers ls a)) tag where
   type Client t m (Verb method status cts' (Headers ls a)) tag =
-    Event t tag -> m (Event t (tag, ReqResult (Headers ls a)))
-  clientWithRoute Proxy _ _ req baseurl = do
+      Event t tag -> m (Event t (ReqResult tag (Headers ls a)))
+  clientWithRoute Proxy _ _ req baseurl trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-    resp <- performRequestCT (Proxy :: Proxy ct) method req' baseurl
-    return $ (fmap . fmap) toHeaders <$> resp
+    resp <- fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl trigs
+    return $ toHeaders <$> resp
     where req' = req { respHeaders =
                        OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
@@ -215,11 +217,11 @@ instance {-# OVERLAPPABLE #-}
     SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) tag where
   type Client t m (Verb method status cts (Headers ls NoContent)) tag
-    = Event t tag -> m (Event t (tag, ReqResult (Headers ls NoContent)))
-  clientWithRoute Proxy _ _ req baseurl = do
+    = Event t tag -> m (Event t (ReqResult tag (Headers ls NoContent)))
+  clientWithRoute Proxy _ _ req baseurl trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-    resp <- performRequestNoBody method req' baseurl
-    return $ (fmap . fmap) toHeaders <$> resp
+    resp <- fmap runIdentity <$> performRequestsNoBody method (constDyn $ Identity req') baseurl trigs
+    return $ toHeaders <$> resp
     where req' = req {respHeaders =
                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
@@ -400,7 +402,7 @@ instance (KnownSymbol sym, HasClient t m sublayout tag, Reflex t)
 instance SupportsServantReflex t m => HasClient t m Raw tag where
   type Client t m Raw tag = Dynamic t (Either Text (XhrRequest ()))
                       -> Event t tag
-                      -> m (Event t (tag, ReqResult ()))
+                      -> m (Event t (ReqResult tag ()))
 
   clientWithRoute _ _ _ _ baseurl xhrs triggers = do
 
@@ -413,8 +415,9 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
         okReq  = fmapMaybe (\(t,x) -> either (const Nothing) (Just . (t,)) x) xhrs'' :: Event t (tag, XhrRequest ())
 
     resps  <- performRequestsAsync okReq
-    return $ leftmost [ fmap (ResponseSuccess ()) <$> resps
-                      , fmap (RequestFailure) <$> badReq ]
+    return $ leftmost [ uncurry RequestFailure <$> badReq
+                      , evalResponse (const $ Right ()) <$> resps
+                      ]
 
 
 -- | If you use a 'ReqBody' in one of your endpoints in your API,

@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -6,50 +5,83 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
+import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
+import           Control.Monad              (join)
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes, fromMaybe)
+import           Data.Functor.Compose
 import           Data.Monoid                ((<>))
 import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
-import           Reflex.Dom
-import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl, SupportsServantReflex)
+import           Data.Traversable           (forM)
+import           Reflex.Dom                 hiding (tag)
+import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
+                                             SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
 import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
 
 
+------------------------------------------------------------------------------
+-- | The result of a request event
+data ReqResult tag a
+    = ResponseSuccess tag a XhrResponse
+      -- ^ The succesfully decoded response from a request tagged with 'tag'
+    | ResponseFailure tag Text XhrResponse
+      -- ^ The failure response, which may have failed decoding or had
+      --   a non-successful response code
+    | RequestFailure  tag Text
+      -- ^ A failure to construct the request tagged with 'tag' at trigger time
 
-data ReqResult a = ResponseSuccess a XhrResponse
-                 | ResponseFailure Text XhrResponse
-                 | RequestFailure Text
 
-instance Functor ReqResult where
-  fmap f (ResponseSuccess a xhr) = ResponseSuccess (f a) xhr
-  fmap _ (ResponseFailure r x)   = ResponseFailure r x
-  fmap _ (RequestFailure r)      = RequestFailure r
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for successful responses, when you want to
+-- ignore the error case. For example:
+-- >> goodResponses <- fmapMaybe reqSuccess <$> clientFun triggers
+reqSuccess :: ReqResult tag a -> Maybe a
+reqSuccess (ResponseSuccess _ x _) = Just x
+reqSuccess _                       = Nothing
 
-reqSuccess :: ReqResult a -> Maybe a
-reqSuccess (ResponseSuccess x _) = Just x
-reqSuccess _                     = Nothing
 
-reqFailure :: ReqResult a -> Maybe Text
-reqFailure (ResponseFailure s _) = Just s
-reqFailure (RequestFailure s)    = Just s
-reqFailure _                     = Nothing
+------------------------------------------------------------------------------
+-- | Simple filter/accessor like 'reqSuccess', but keeping the request tag
+reqSuccess' :: ReqResult tag a -> Maybe (tag,a)
+reqSuccess' (ResponseSuccess tag x _) = Just (tag,x)
+reqSuccess' _                         = Nothing
 
-response :: ReqResult a -> Maybe XhrResponse
-response (ResponseSuccess _ x) = Just x
-response (ResponseFailure _ x) = Just x
-response _                     = Nothing
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for any failure case
+reqFailure :: ReqResult tag a -> Maybe Text
+reqFailure (ResponseFailure _ s _) = Just s
+reqFailure (RequestFailure  _ s)   = Just s
+reqFailure _                       = Nothing
+
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor for the raw XHR response
+response :: ReqResult tag a -> Maybe XhrResponse
+response (ResponseSuccess _ _ x) = Just x
+response (ResponseFailure _ _ x) = Just x
+response _                       = Nothing
+
+
+------------------------------------------------------------------------------
+instance Functor (ReqResult tag) where
+  fmap f (ResponseSuccess tag a xhr) = ResponseSuccess tag (f a) xhr
+  fmap _ (ResponseFailure tag r x)   = ResponseFailure tag r x
+  fmap _ (RequestFailure  tag r)      = RequestFailure tag r
 
 
 -------------------------------------------------------------------------------
@@ -63,10 +95,12 @@ data QParam a = QParamSome a
               | QParamInvalid Text
               -- ^ Indication that your validation failed (the request isn't valid)
 
+
 qParamToQueryPart :: ToHttpApiData a => QParam a -> Either Text (Maybe Text)
 qParamToQueryPart (QParamSome a)    = Right (Just $ toQueryParam a)
 qParamToQueryPart QNone             = Right Nothing
 qParamToQueryPart (QParamInvalid e) = Left e
+
 
 data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
                  | QueryPartParams (Dynamic t [Text])
@@ -97,20 +131,13 @@ addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) ->
 addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
--- * performing requests
-
-displayHttpRequest :: Text -> Text
-displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
-
--- | This function actually performs the request.
-performRequest :: forall t m.(SupportsServantReflex t m)
-               => Text
-               -> Req t
-               -> Dynamic t BaseUrl
-               -> Event t ()
-               -> m (Event t XhrResponse, Event t Text)
-performRequest reqMeth req reqHost trigger = do
-
+reqToReflexRequest
+    :: forall t. Reflex t
+    => Text
+    -> Dynamic t BaseUrl
+    -> Req t
+    -> (Dynamic t (Either Text (XhrRequest XhrPayload)))
+reqToReflexRequest reqMeth reqHost req =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -143,8 +170,8 @@ performRequest reqMeth req reqHost trigger = do
       queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Dynamic t (Either Text [Text])
       queryString :: Dynamic t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
---        ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") (sequence qs)
-      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q) baseUrl urlPath queryString
+      xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q)
+          baseUrl urlPath queryString
         where
           (</>) :: Text -> Text -> Text
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
@@ -203,64 +230,186 @@ performRequest reqMeth req reqHost trigger = do
 
       xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
-  let reqs    = tagPromptlyDyn xhrReq trigger
-      okReqs  = fmapMaybe (either (const Nothing) Just) reqs
-      badReqs = fmapMaybe (either Just (const Nothing)) reqs
+  in xhrReq
 
-  resps <- performRequestAsync okReqs
+-- * performing requests
+
+displayHttpRequest :: Text -> Text
+displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
+
+-- | This function actually performs the request.
+performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
+                => Text
+                -> Dynamic t (f (Req t))
+                -> Dynamic t BaseUrl
+                -> Event t tag
+                -> m (Event t (tag, f (Either Text XhrResponse)))
+performRequests reqMeth rs reqHost trigger = do
+  -- let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
+  let xhrReqs = join $ (\(fxhr :: f (Req t)) -> sequence $ reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
+  let reqs    = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
+  resps <- performSomeRequestsAsync reqs
+  return $ getCompose <$> resps
+
+-- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
+performSomeRequestsAsync
+    :: (MonadIO (Performable m),
+        HasWebView (Performable m),
+        PerformEvent t m,
+        TriggerEvent t m,
+        Traversable f,
+        IsXhrPayload a)
+    => Event t (f (Either Text (XhrRequest a)))
+    -> m (Event t (f (Either Text XhrResponse)))
+performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap return
+
+
+------------------------------------------------------------------------------
+-- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
+-- that accepts 'f (Either e (XhrRequestb))' events
+performSomeRequestsAsync'
+    :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
+    => (XhrRequest b -> (a -> IO ()) -> Performable m XMLHttpRequest)
+    -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
+performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
+  rs <- hrs
+  resps <- forM rs $ \r -> case r of
+      Left e -> do
+          resp <- liftIO $ newMVar (Left e)
+          return resp
+      Right r' -> do
+          resp <- liftIO newEmptyMVar
+          _ <- newXhr r' $ liftIO . putMVar resp . Right
+          return resp
+  _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar
+  return ()
+
+
+
+-- | This function actually performs the request.
+performRequest :: forall t m tag .(SupportsServantReflex t m)
+               => Text
+               -> (Req t)
+               -> Dynamic t BaseUrl
+               -> Event t tag
+               -> m (Event t (tag, XhrResponse), Event t (tag, Text))
+performRequest reqMeth req reqHost trigger = do
+
+  let xhrReq  = reqToReflexRequest reqMeth reqHost req
+  let reqs    = attachPromptlyDynWith (flip (,)) xhrReq trigger
+      okReqs  = fmapMaybe (\(t,e) -> either (const Nothing) (Just . (t,)) e) reqs
+      badReqs = fmapMaybe (\(t,e) -> either (Just . (t,)) (const Nothing) e) reqs
+
+  resps <- performRequestsAsync okReqs
 
   return (resps, badReqs)
+
 
 type XhrPayload = T.Text
 bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = TE.decodeUtf8 . BL.toStrict
 
 
-------------------------------------------------------------------------------
-performRequestNoBody :: forall t m .(SupportsServantReflex t m)
-                     => Text
-                     -> Req t
-                     -> Dynamic t BaseUrl
-                     -> Event t () -> m (Event t (ReqResult NoContent))
-performRequestNoBody reqMeth req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMeth req reqHost trigger
-  let decodeResp = const $ Right NoContent
-  return $ leftmost [ fmap (evalRequest decodeResp) resp,
-                      fmap RequestFailure badReq]
+-- performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
+--                      => Text
+--                      -> Req t
+--                      -> Dynamic t BaseUrl
+--                      -> Event t tag -> m (Event t (ReqResult tag NoContent))
+-- performRequestNoBody reqMeth req reqHost trigger = do
+--   (resp, badReq) <- performRequest reqMeth req reqHost trigger
+--   let decodeResp = const $ Right NoContent
+--   return $ leftmost [ fmap (evalResponse decodeResp) resp
+--                     , fmap (uncurry RequestFailure) badReq
+--                     ]
 
 
-------------------------------------------------------------------------------
-performRequestCT :: (SupportsServantReflex t m,
-                     MimeUnrender ct a)
-                 => Proxy ct -> Text -> Req t -> Dynamic t BaseUrl
-                 -> Event t () -> m (Event t (ReqResult a))
-performRequestCT ct reqMeth req reqHost trigger = do
-  (resp, badReq) <- performRequest reqMeth req reqHost trigger
+-- performRequestCT
+--     :: (SupportsServantReflex t m,
+--         MimeUnrender ct a)
+--     => Proxy ct
+--     -> Text
+--     -> Req t
+--     -> Dynamic t BaseUrl
+--     -> Event t tag
+--     -> m (Event t (ReqResult tag a))
+-- performRequestCT ct reqMeth req reqHost trigger = do
+--   (resp, badReq) <- performRequest reqMeth req reqHost trigger
+--   let decodeResp x = first T.pack .
+--                      mimeUnrender ct .
+--                      BL.fromStrict .
+--                      TE.encodeUtf8 =<< note "No body text"
+--                      (_xhrResponse_responseText x)
+
+--   return $ leftmost [fmap (evalResponse decodeResp) resp
+--                     , fmap (uncurry RequestFailure) badReq
+--                     ]
+
+
+performRequestsCT
+    :: (SupportsServantReflex t m,
+        MimeUnrender ct a, Traversable f)
+    => Proxy ct
+    -> Text
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> Event t tag
+    -> m (Event t (f (ReqResult tag a)))
+performRequestsCT ct reqMeth reqs reqHost trigger = do
+  resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp x = first T.pack .
                      mimeUnrender ct .
                      BL.fromStrict .
                      TE.encodeUtf8 =<< note "No body text"
                      (_xhrResponse_responseText x)
+  return $ fmap
+      (\(t,rs) -> ffor rs $ \r -> case r of
+              Left e  -> RequestFailure t e
+              Right g -> evalResponse decodeResp (t,g)
+      )
+      resps
 
-  return $ leftmost [fmap (evalRequest decodeResp) resp,
-                     fmap RequestFailure badReq]
+
+performRequestsNoBody
+    :: (SupportsServantReflex t m,
+        Traversable f)
+    => Text
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> Event t tag
+    -> m (Event t (f (ReqResult tag NoContent)))
+performRequestsNoBody reqMeth reqs reqHost trigger = do
+  resps <- performRequests reqMeth reqs reqHost trigger
+  let decodeResp = const $ Right NoContent
+  return $ ffor resps $ \(tag,rs) -> ffor rs $ \r -> case r of
+      Left e  -> RequestFailure tag e
+      Right g -> evalResponse decodeResp (tag,g)
 
 
 ------------------------------------------------------------------------------
-evalRequest :: (XhrResponse -> Either Text a) -> XhrResponse -> ReqResult a
-evalRequest decode xhr =
+evalResponse
+    :: (XhrResponse -> Either Text a)
+    -> (tag, XhrResponse)
+    -> ReqResult tag a
+evalResponse decode (tag, xhr) =
     let okStatus   = _xhrResponse_status xhr < 400
         errMsg = fromMaybe
             ("Empty response with error code " <>
                 T.pack (show $ _xhrResponse_status xhr))
             (_xhrResponse_responseText xhr)
         respPayld  = if okStatus
-                     then either (flip ResponseFailure xhr)
-                                 (flip ResponseSuccess xhr) (decode xhr)
-                     else ResponseFailure errMsg xhr
+                     then either
+                          (\e -> ResponseFailure tag e xhr)
+                          (\v -> ResponseSuccess tag v xhr)
+                          (decode xhr)
+                     else ResponseFailure tag errMsg xhr
     in respPayld
+
 
 
 
 note :: e -> Maybe a -> Either e a
 note e = maybe (Left e) Right
+
+fmapL :: (e -> e') -> Either e a -> Either e' a
+fmapL _ (Right a) = Right a
+fmapL f (Left e)  = Left (f e)

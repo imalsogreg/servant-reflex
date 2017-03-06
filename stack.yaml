@@ -1,7 +1,10 @@
+resolver: lts-8.3
 flags: {}
 extra-package-dbs: []
 packages:
 - '.'
+- 'testserver'
+# - 'testdriver'
 
 - location:
     git: https://github.com/reflex-frp/reflex
@@ -40,6 +43,11 @@ packages:
     commit: 68fc1a90580ea8f20775491cf651eefea422212a
   extra-dep: true
 
+- location:
+    git: https://github.com/haskell-servant/servant-snap/
+    commit: b29e851e28f5adc1d9726e287f0691d77e854a9c
+  extra-dep: true
+
 extra-deps:
 - cpphs-1.20.4
 - directory-1.2.7.1
@@ -53,4 +61,6 @@ extra-deps:
 - vector-0.12.0.0
 - webkitgtk3-javascriptcore-0.13.2.0
 - zenc-0.1.1
-resolver: lts-8.3
+- snap-1.0.0.1
+- heist-1.0.1.0
+- map-syntax-0.2.0.2

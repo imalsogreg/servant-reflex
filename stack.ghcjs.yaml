@@ -1,0 +1,46 @@
+resolver: lts-7.19
+compiler: ghcjs-0.2.1.9007019_ghc-8.0.1
+compiler-check: match-exact
+
+setup-info:
+  ghcjs:
+    source:
+      ghcjs-0.2.1.9007019_ghc-8.0.1:
+           url: http://ghcjs.tolysz.org/ghc-8.0-2017-02-05-lts-7.19-9007019.tar.gz
+           sha1: d2cfc25f9cda32a25a87d9af68891b2186ee52f9
+packages:
+- '.'
+# - 'testserver'
+# - 'testdriver'
+
+- location:
+    git: https://github.com/reflex-frp/reflex
+    commit: d78ba4318c425ca9b942dc387d7c5c7ab2d2e095
+  extra-dep: true
+
+- location:
+    git: https://github.com/mokus0/dependent-sum.git
+    commit: bbc8ad3a81ea7f2b07ce7d036efd56f2e0f7c6ff
+  extra-dep: true
+
+- location:
+    git: https://github.com/afcady/reflex-dom.git
+    commit: 39b5ff23f3ae95d77c909ab3ed4bc4bd9e61f600
+  extra-dep: true
+
+- location:
+    git: https://github.com/afcady/dependent-sum-template.git
+    commit: 68fc1a90580ea8f20775491cf651eefea422212a
+  extra-dep: true
+
+- location:
+    git: https://github.com/ghcjs/ghcjs-base.git
+    commit: dd7034ef8582ea8a175a71a988393a9d1ee86d6f
+  extra-dep: true
+
+extra-deps:
+- ghcjs-dom-0.2.4.0
+- dlist-0.7.1.2
+- prim-uniq-0.1.0.1
+- ref-tf-0.4.0.1
+- zenc-0.1.1

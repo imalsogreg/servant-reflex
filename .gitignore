@@ -6,3 +6,5 @@ log
 *.webapp
 *.stats
 out
+reflex-platform
+/.stack-work/

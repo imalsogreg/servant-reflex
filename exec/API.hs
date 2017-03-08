@@ -1,10 +1,32 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators     #-}
 
 module API where
 
-import Data.Text (Text)
-import Servant.API
+import           Data.Aeson
+import           Data.Aeson.Types (typeMismatch)
+import           Data.Text        (Text)
+import           Servant.API
+
+newtype Question = Question { unQuestion :: Text } deriving (Show)
+
+instance ToJSON Question where
+  toJSON (Question txt) = object ["question" .= txt]
+
+instance FromJSON Question where
+  parseJSON (Object v) = Question <$> v .: "question"
+  parseJSON x          = typeMismatch "Couldn't find key 'question'" x
+
+newtype Answer = Answer { unAnswer :: Text } deriving (Show)
+
+instance ToJSON Answer where
+  toJSON (Answer txt) = object ["answer" .= txt]
+
+instance FromJSON Answer where
+  parseJSON (Object v) = Answer <$> v .: "answer"
+  parseJSON x          = typeMismatch "Couldn't find key 'answer'" x
+
 
 -- | API spec for server, client, and docs
 type API = "getunit" :> Get '[JSON] ()
@@ -16,6 +38,8 @@ type API = "getunit" :> Get '[JSON] ()
       :<|> "double" :> ReqBody '[JSON] Double
                     :> Post '[JSON] Double
       :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] Text
+      :<|> "qna" :> ReqBody '[JSON] Question
+                 :> Post '[JSON] Answer
       :<|> Raw
 
 type GET = Get '[JSON] ()

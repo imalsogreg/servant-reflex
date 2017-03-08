@@ -5,24 +5,27 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 
+import           Control.Monad.IO.Class            (liftIO)
 import           Data.Aeson
 import           Data.Bool
-import           Data.Char (toUpper)
-import qualified Data.List as L
+import           Data.Char                         (toUpper)
+import qualified Data.List                         as L
 import           Data.Monoid
 import           Data.Proxy
-import           Data.Text hiding (length, null, map, head, toUpper)
-import qualified Data.Text as T
+import           Data.Text                         hiding (head, length, map,
+                                                    null, toUpper)
+import qualified Data.Text                         as T
+import qualified Data.Text.IO                      as T
 import           GHC.Generics
-import           Snap.Http.Server
-import           Snap.Core
 import           Servant.Server.Internal.SnapShims
+import           Snap.Core
+import           Snap.Http.Server
 
-import           Servant -- hiding (serveDirectory)
+import           Servant
 import           Servant.Server
 -- import           Snap.Util.FileServe
 import           API
-import Snap
+import           Snap
 
 -- * Example
 
@@ -45,7 +48,7 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDirectory "static"
+server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> serveDirectory "static"
   where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
         sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: Text)
@@ -57,8 +60,15 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> serveDire
                  | otherwise             = T.intercalate ", " (L.init greetings)
                                        <> ", and " <> L.last greetings <> ", "
            return . modifier $ greetPart <> n
-        dbl x = return $ x * 2
+        dbl x = if x `elem` [4,13]
+                then throwError $ err500 { errBody = "No unlucky numbers please" }
+                else return $ x * 2
         multi = return . bool "Box unchecked" "Box Checked"
+        qna q = do
+          liftIO $ do
+            putStrLn $ "qna got: " ++ show q
+            T.putStrLn $ unQuestion q
+          return $ Answer $ unQuestion q
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.

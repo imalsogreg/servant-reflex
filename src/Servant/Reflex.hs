@@ -160,7 +160,7 @@ instance {-# OVERLAPPABLE #-} BuildHeaderKeysTo '[]
   where buildHeaderKeysTo _ = []
 
 instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
-  => BuildHeaderKeysTo '[(Header h v) ': xs] where
+  => BuildHeaderKeysTo ((Header h v) ': xs) where
   buildHeaderKeysTo _ = T.pack (symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
 
 -- HEADERS Verb (Content) --

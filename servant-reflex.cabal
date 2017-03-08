@@ -11,6 +11,10 @@ Category: Web
 Build-type: Simple
 Cabal-version: >=1.10
 
+Flag Example
+  description: Enable example
+  default: False
+
 library
   exposed-modules:
     Servant.Reflex
@@ -46,6 +50,10 @@ library
   default-language: Haskell2010
 
 executable example
+  if flag(Example)
+    buildable: True
+  else
+    buildable: False
   build-depends: aeson, reflex, servant-reflex, base, scientific, servant, reflex-dom, text
   default-language: Haskell2010
   main-is: Example.hs

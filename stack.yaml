@@ -1,0 +1,56 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+
+- location:
+    git: https://github.com/reflex-frp/reflex
+    commit: d78ba4318c425ca9b942dc387d7c5c7ab2d2e095
+  extra-dep: true
+
+- location:
+    git: https://github.com/mokus0/dependent-sum.git
+    commit: bbc8ad3a81ea7f2b07ce7d036efd56f2e0f7c6ff
+  extra-dep: true
+
+- location:
+    git: https://github.com/gtk2hs/gtk2hs.git
+    commit: 21d3a12a82756d04066e5e4198b35097012ee65b
+  subdirs:
+  - cairo
+  - gio
+  - glib
+  - gtk
+  - pango
+  - tools
+  extra-dep: true
+
+- location:
+    git: https://github.com/byorgey/hashtables.git
+    commit: 47d9ed261a5aba66a13d3c4da0e391d338b57fc5
+  extra-dep: true
+
+- location:
+    git: https://github.com/afcady/reflex-dom.git
+    commit: 39b5ff23f3ae95d77c909ab3ed4bc4bd9e61f600
+  extra-dep: true
+
+- location:
+    git: https://github.com/afcady/dependent-sum-template.git
+    commit: 68fc1a90580ea8f20775491cf651eefea422212a
+  extra-dep: true
+
+extra-deps:
+- cpphs-1.20.4
+- directory-1.2.7.1
+- ghcjs-dom-0.2.4.0
+- haskell-src-exts-1.17.1
+- haskell-src-meta-0.6.0.14
+- hlint-1.9.35
+- prim-uniq-0.1.0.1
+- primitive-0.6.2.0
+- ref-tf-0.4.0.1
+- vector-0.12.0.0
+- webkitgtk3-javascriptcore-0.13.2.0
+- zenc-0.1.1
+resolver: lts-8.3

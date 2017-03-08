@@ -12,6 +12,7 @@ import Control.Monad.Fix (MonadFix)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import GHC.TypeLits
 import Servant.API
 import Servant.Reflex
 import API
@@ -44,6 +45,8 @@ run = do
   -- Name the computed API client functions
   let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> doRaw) =
         client api (Proxy :: Proxy m) url
+
+      c2 = client (Proxy :: Proxy ComprehensiveAPI) (Proxy :: Proxy m) url -- Just make sure this compiles for now
 
   elClass "div" "demo-group" $ do
     unitBtn  <- divClass "unit-button" $ button "Get unit"

@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/imalsogreg/servant-reflex.svg?branch=master)](https://travis-ci.org/imalsogreg/servant-reflex)
 
-## The problem `servant-reflex` solves
+## `servant-reflex` lets you share your `servant` APIs with the frontend
 
 Keeping your frontend in sync with your API server can be difficult - when the API changes its input parameters or return type, XHR requests from the frontend will fail at runtime. If your API is defined by [servant](haskell-servant.readthedocs.io) combinators, you can use `servant-reflex` to share the API between the server and frontend. 
 Syncronization between is checked at compile time, and rather than building XHR requests by hand, API endpoints are available behind `reflex`'s FRP semantics.
@@ -33,6 +33,7 @@ type API = "getint"  :> Get '[JSON] Int
   -- servant-reflex computes FRP functions for each API endpoint
   let (getint :<|> sayhi :<|> doubleit :<|> _) = client (Proxy :: Proxy API)
                                                         (Proxy :: Proxy m)
+                                                        (Proxy :: Proxy ())
                                                         (constDyn (BasePath "/"))
 ```
 
@@ -42,7 +43,7 @@ These client functions are computed from your API type. They manage serializatio
    -- No need to write these functions. servant-reflex creates them for you!
    getint :: MonadWidget t m
           => Event t ()  -- ^ Trigger the XHR Request
-          -> m (Event t (ReqResult Int)) -- ^ Consume the answer
+          -> m (Event t (ReqResult () Int)) -- ^ Consume the answer
 
    sayhi :: MonadWidget t m
          => Dynamic t (QParam Text) 
@@ -53,15 +54,15 @@ These client functions are computed from your API type. They manage serializatio
             -- ^ Flag for capitalizing the response
          -> Event t ()
             -- ^ Trigger the XHR Request
-         -> m (Event t (ReqResult Text))
+         -> m (Event t (ReqResult () Text))
 
    doubleit :: MonadWidget t m
             => Dynamic t (Either Text Double)
             -> Event t ()
-            -> m (Event t (ReqResult Double))
+            -> m (Event t (ReqResult () Double))
 ```
 
-`ReqResult a` is defined in [`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42) and reports whether or not your request was sent (if validation fails, the request won't be sent), and how decoding of the response went. You can pattern match on these explicitly, but usually you'll want to use `fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the elimination functions to filter the result type you care about, like this:
+`ReqResult tag a` is defined in [`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42) and reports whether or not your request was sent (if validation fails, the request won't be sent), and how decoding of the response went. You can pattern match on these explicitly, but usually you'll want to use `fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the elimination functions to filter the result type you care about, like this:
 
 ```haskell
   -- ... continued ...
@@ -136,3 +137,51 @@ dist/build/back/back -p 8001
 And simply browse to `localhost:8001`
 
 **For a larger example of a project that shares types between backend and frontend, see [hsnippet](https://github.com/mightybyte/hsnippet).**
+
+
+## Tagging requests
+
+The input and the return type of a client function like `getDouble` are both event streams. The individual input events and responses occur at different times and aren't automatically paired up, but you can recover the relationship by tagging the requests.
+
+So far we have used an `Event t ()` to trigger sending a request. If we choose e.g. `Double` for the third `Proxy` argument to `client`, then `Event t Double` will be used to trigger requests, and each `ReqResult` will carry the tag of its request. Imagine we wanted to display not just the last "double" from `doubleIt`, but a whole table of valid inputs and their doubled responses:
+
+```
+  ...
+  inp <- textInput def
+
+  -- Convert the raw text into an `Either Text Double`
+  let inpNum = maybe (Left "No Parse") Right . readMaybe . T.unpack <$> value inp
+  go  <- button "Double It"
+
+  -- Call 'doubleIt' with triggers that coincide with good input parses
+  rs  <- doubleIt inpNum (fforMaybe (tagPromptlyDyn inpNum go) $ \case
+                                 Left  _ -> Nothing
+                                 Right a -> Just a
+                         )
+
+  -- Accumulate good responses in a map
+  doubleTable <- foldDyn (<>) mempty $ ffor rs $ \case
+    ResponseSuccess tag v _ -> tag =: v
+    _                       -> mempty
+
+  el "table" $ do
+    listWithKey doubleTable $ \k dv -> el "tr" $ do
+      el "td" $ text (T.pack $ show k)
+      el "td" $ dynText (T.pack . show <$> dv)
+  ...
+```
+
+## Simultaneous requests
+
+'Servant.Reflex.Multi' provides an alternative client-generation function called 'clientA' (client applicative). Choose a container type that has both `Applicative` and `Traversable` instances, and pass it to `clientA` through another 'Proxy'. Our `sayHi` client function will then have this type:
+
+```
+sayHi
+  :: Dynamic t (f (QParam Text))
+  -> Dynamic t (f [Text])
+  -> Dynamic t (f Bool)
+  -> Event t tag
+  -> m (Event t (f (ReqResult tag Text)))
+```
+
+The dynamic params are each wrapped in `f`. For every firing of the trigger event `tag`, all of these parameters will be combined according to `f`'s applicative instance (when `f` is `[]`, you will get all combinations of all parameters taken together as a request; when `f` is 'ZipList', the Nth elemens of each parameters list will be taken together as a request). Using this interface, you can trigger many XHR's from a single event occurence, and expect the responses to be structured the same way as the requests.

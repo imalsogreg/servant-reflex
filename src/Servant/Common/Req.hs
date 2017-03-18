@@ -13,7 +13,10 @@ import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Data.Aeson
+import qualified Data.Aeson                 as Aeson
 import           Data.Bifunctor             (first)
+import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes, fromMaybe)
@@ -24,13 +27,25 @@ import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
+import           Data.Typeable
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
-import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
+import           Servant.API.ContentTypes   (JSON, MimeUnrender(..),
+                                             NoContent(..))
 import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
+
+
+#ifdef ghcjs_HOST_OS
+import Control.Exception
+import System.IO.Unsafe (unsafePerformIO)
+import GHCJS.Buffer (create, fromByteString, getArrayBuffer)
+import GHCJS.Types (JSVal, jsval)
+import GHCJS.Marshal (FromJSVal(..), fromJSVal)
+import GHCJS.Marshal.Pure (pToJSVal)
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -374,6 +389,40 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
       )
       resps
 
+mimeUnrender' :: (MimeUnrender ct a, Typeable ct, FromJSON a) => Proxy ct -> BS.ByteString -> Either String a
+mimeUnrender' p bs
+    | cantRawJson  = mimeUnrender p (BL.fromStrict bs)
+    | otherwise    = note "Raw JSON decode failure" $ rawDecode bs
+  where
+      cantRawJson = typeOf (Proxy :: Proxy JSON) /= typeOf p
+
+-- copied from http://lpaste.net/6122658287709061120
+#ifdef ghcjs_HOST_OS
+foreign import javascript safe "new DataView($3,$1,$2)" js_dataView :: Int -> Int -> JSVal -> JSVal
+foreign import javascript unsafe "JSON['parse']($1)" js_jsonParse :: JSVal -> JSVal
+rawDecode :: (FromJSON a) => BS.ByteString -> Maybe a
+rawDecode bs = do
+  -- Below copied from Reflex.Dom.WebSocket.Foreign
+  -- let (b, off, len) = fromByteString bs
+  --     -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
+  -- jsv :: JSVal <- if BS.length bs == 0
+  --        then undefined -- jsval . getArrayBuffer <$> create 0
+  --        else undefined -- return $ js_dataView off len $ jsval $ getArrayBuffer b
+
+  let jsv = _ bs
+  -- TODO pFromJSVal to avoid unsafePerformIO
+  let res = unsafePerformIO $ try $ fromJSVal $ js_jsonParse jsv
+  case res of
+    Left (_e :: SomeException) -> Nothing
+    Right (v :: (Maybe Aeson.Value)) -> maybe Nothing go v
+  where
+    go v = case Aeson.fromJSON v of
+      Aeson.Success a -> Just a
+      _ -> Nothing
+#else
+rawDecode :: FromJSON a => BS.ByteString -> Maybe a
+rawDecode = decode . BL.fromStrict
+#endif
 
 performRequestsNoBody
     :: (SupportsServantReflex t m,
@@ -396,7 +445,7 @@ evalResponse
     :: (XhrResponse -> Either Text a)
     -> (tag, XhrResponse)
     -> ReqResult tag a
-evalResponse decode (tag, xhr) =
+evalResponse decodeFun (tag, xhr) =
     let okStatus   = _xhrResponse_status xhr < 400
         errMsg = fromMaybe
             ("Empty response with error code " <>
@@ -406,7 +455,7 @@ evalResponse decode (tag, xhr) =
                      then either
                           (\e -> ResponseFailure tag e xhr)
                           (\v -> ResponseSuccess tag v xhr)
-                          (decode xhr)
+                          (decodeFun xhr)
                      else ResponseFailure tag errMsg xhr
     in respPayld
 

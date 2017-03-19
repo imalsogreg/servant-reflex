@@ -145,7 +145,7 @@ The input and the return type of a client function like `getDouble` are both eve
 
 So far we have used an `Event t ()` to trigger sending a request. If we choose e.g. `Double` for the third `Proxy` argument to `client`, then `Event t Double` will be used to trigger requests, and each `ReqResult` will carry the tag of its request. Imagine we wanted to display not just the last "double" from `doubleIt`, but a whole table of valid inputs and their doubled responses:
 
-```
+```haskell
   ...
   inp <- textInput def
 
@@ -175,7 +175,7 @@ So far we have used an `Event t ()` to trigger sending a request. If we choose e
 
 'Servant.Reflex.Multi' provides an alternative client-generation function called 'clientA' (client applicative). Choose a container type that has both `Applicative` and `Traversable` instances, and pass it to `clientA` through another 'Proxy'. Our `sayHi` client function will then have this type:
 
-```
+```haskell
 sayHi
   :: Dynamic t (f (QParam Text))
   -> Dynamic t (f [Text])

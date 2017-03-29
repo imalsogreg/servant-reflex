@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -58,6 +59,7 @@ data ReqResult tag a
       --   a non-successful response code
     | RequestFailure  tag Text
       -- ^ A failure to construct the request tagged with 'tag' at trigger time
+  deriving (Functor)
 
 
 ------------------------------------------------------------------------------
@@ -97,13 +99,6 @@ reqTag :: ReqResult tag a -> tag
 reqTag (ResponseSuccess tag _ _) = tag
 reqTag (ResponseFailure tag _ _) = tag
 reqTag (RequestFailure  tag _  ) = tag
-
-------------------------------------------------------------------------------
-instance Functor (ReqResult tag) where
-  fmap f (ResponseSuccess tag a xhr) = ResponseSuccess tag (f a) xhr
-  fmap _ (ResponseFailure tag r x)   = ResponseFailure tag r x
-  fmap _ (RequestFailure  tag r)      = RequestFailure tag r
-
 
 -------------------------------------------------------------------------------
 -- | You must wrap the parameter of a QueryParam endpoint with 'QParam' to

@@ -20,18 +20,19 @@ module Servant.Common.BaseUrl (
 ) where
 
 import           Control.Monad (join)
-import           Control.Monad.IO.Class (MonadIO)
+-- import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Fix (MonadFix)
 import           Data.Monoid ((<>))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           GHC.Generics
+import           Language.Javascript.JSaddle.Monad (MonadJSM)
 import           Reflex
 import           Reflex.Dom
 import           Text.Read
 
 
-type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, HasWebView (Performable m), MonadIO (Performable m))
+type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, HasWebView (Performable m), MonadJSM (Performable m))
 
 -- | URI scheme to use
 data Scheme =

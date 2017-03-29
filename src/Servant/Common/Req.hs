@@ -25,6 +25,7 @@ import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
+import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
@@ -255,6 +256,7 @@ performRequests reqMeth rs reqHost trigger = do
 -- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
 performSomeRequestsAsync
     :: (MonadIO (Performable m),
+        MonadJSM (Performable m),
         HasWebView (Performable m),
         PerformEvent t m,
         TriggerEvent t m,
@@ -270,7 +272,7 @@ performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap re
 -- that accepts 'f (Either e (XhrRequestb))' events
 performSomeRequestsAsync'
     :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
-    => (XhrRequest b -> (a -> IO ()) -> Performable m XMLHttpRequest)
+    => (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
     -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
 performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs

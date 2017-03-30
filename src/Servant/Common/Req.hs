@@ -377,7 +377,7 @@ bytesToPayload = TE.decodeUtf8 . BL.toStrict
 
 performRequestsCT
     :: (SupportsServantReflex t m,
-        MimeUnrender ct a, Traversable f)
+        MimeUnrender ct a, Traversable f, Typeable ct)
     => Proxy ct
     -> Text
     -> Dynamic t (f (Req t))
@@ -387,8 +387,8 @@ performRequestsCT
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp x = first T.pack .
-                     mimeUnrender ct .
-                     BL.fromStrict .
+                     mimeUnrender' ct .
+                     -- BL.fromStrict .
                      TE.encodeUtf8 =<< note "No body text"
                      (_xhrResponse_responseText x)
   return $ fmap
@@ -398,9 +398,9 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
       )
       resps
 
-mimeUnrender' :: (MimeUnrender ct a, Typeable ct, FromJSON a) => Proxy ct -> BS.ByteString -> Either String a
+mimeUnrender' :: (MimeUnrender ct a, Typeable ct) => Proxy ct -> BS.ByteString -> Either String a
 mimeUnrender' p bs
-    | cantRawJson  = mimeUnrender p (BL.fromStrict bs)
+    -- | cantRawJson  = mimeUnrender p (BL.fromStrict bs)
     | otherwise    = note "Raw JSON decode failure" $ rawDecode bs
   where
       cantRawJson = typeOf (Proxy :: Proxy JSON) /= typeOf p
@@ -439,7 +439,7 @@ aesonFromJSVal r = case jsonTypeOf r of
     JSONFloat   -> liftM (A.Number . (fromFloatDigits :: Double -> Scientific))
          <$> fromJSVal r
     JSONBool    -> liftM A.Bool  <$> fromJSVal r
-    JSONString  -> liftM A.String <$> fromJSVal r
+    JSONString  -> liftM (A.String . ("TEST" <>)) <$> fromJSVal r
     -- JSONArray   -> liftM (A.Array . V.fromList) <$> (fromJSVal r :: _)
     JSONArray   -> liftM (A.Array . V.fromList) <$>
                    runMaybeT (traverse (MaybeT . aesonFromJSVal) =<<
@@ -449,9 +449,8 @@ aesonFromJSVal r = case jsonTypeOf r of
         runMaybeT $ do
             propVals <- forM props $ \p -> do
                 v <- MaybeT (aesonFromJSVal =<< OI.getProp p (OI.Object r))
-                -- return (JSS.textFromJSString p, v)
                 return (T.textFromJSString p, v)
-            return (A.Object (H.fromList propVals))
+            return (A.Object (H.fromList propVals <> H.fromList [("extratest", A.Null)]))
 {-# INLINE aesonFromJSVal #-}
 
 #else

@@ -41,11 +41,24 @@ import           Servant.API.BasicAuth
 
 #ifdef ghcjs_HOST_OS
 import Control.Exception
+import           Control.Monad (liftM)
+import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import qualified Data.Aeson                 as A
+import qualified Data.HashMap.Strict as H
+import qualified Data.Text.Internal as T
+import qualified Data.Vector as V
 import System.IO.Unsafe (unsafePerformIO)
 import GHCJS.Buffer (create, fromByteString, getArrayBuffer)
 import GHCJS.Types (JSVal, jsval)
 import GHCJS.Marshal (FromJSVal(..), fromJSVal)
 import GHCJS.Marshal.Pure (pToJSVal)
+import qualified JavaScript.Object.Internal as OI
+import           Data.Scientific (Scientific, scientific, fromFloatDigits)
+import           GHCJS.Types
+import           GHCJS.Marshal
+import           GHCJS.Marshal.Pure
+import           GHCJS.Foreign.Internal
+import           GHCJS.Marshal.Internal
 #endif
 
 
@@ -398,15 +411,15 @@ foreign import javascript unsafe "JSON['parse']($1)" js_jsonParse :: JSVal -> JS
 rawDecode :: (FromJSON a) => BS.ByteString -> Maybe a
 rawDecode bs = do
   -- Below copied from Reflex.Dom.WebSocket.Foreign
-  -- let (b, off, len) = fromByteString bs
-  --     -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
-  -- jsv :: JSVal <- if BS.length bs == 0
-  --        then undefined -- jsval . getArrayBuffer <$> create 0
-  --        else undefined -- return $ js_dataView off len $ jsval $ getArrayBuffer b
+  let (b, off, len) = fromByteString bs
+      -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
+  let jsv = if BS.length bs == 0
+            then unsafePerformIO $ jsval . getArrayBuffer <$> create 0
+            else js_dataView off len $ jsval $ getArrayBuffer b
 
-  let jsv = _ bs
+  -- let jsv = _ bs
   -- TODO pFromJSVal to avoid unsafePerformIO
-  let res = unsafePerformIO $ try $ fromJSVal $ js_jsonParse jsv
+  let res = unsafePerformIO $ try $ aesonFromJSVal $ js_jsonParse jsv
   case res of
     Left (_e :: SomeException) -> Nothing
     Right (v :: (Maybe Aeson.Value)) -> maybe Nothing go v
@@ -414,6 +427,32 @@ rawDecode bs = do
     go v = case Aeson.fromJSON v of
       Aeson.Success a -> Just a
       _ -> Nothing
+
+
+-- copied from http://lpaste.net/raw/353535  Thanks ncl28!
+aesonFromJSVal :: JSVal -> IO (Maybe A.Value)
+aesonFromJSVal r = case jsonTypeOf r of
+    JSONNull    -> return (Just A.Null)
+    JSONInteger -> liftM (A.Number . flip scientific 0 . (toInteger :: Int -> Integer))
+         <$> fromJSVal r
+    JSONFloat   -> liftM (A.Number . (fromFloatDigits :: Double -> Scientific))
+         <$> fromJSVal r
+    JSONBool    -> liftM A.Bool  <$> fromJSVal r
+    JSONString  -> liftM A.String <$> fromJSVal r
+    -- JSONArray   -> liftM (A.Array . V.fromList) <$> (fromJSVal r :: _)
+    JSONArray   -> liftM (A.Array . V.fromList) <$>
+                   runMaybeT (traverse (MaybeT . aesonFromJSVal) =<<
+                    (MaybeT (fromJSVal r)))
+    JSONObject  -> do
+        props <- OI.listProps (OI.Object r)
+        runMaybeT $ do
+            propVals <- forM props $ \p -> do
+                v <- MaybeT (aesonFromJSVal =<< OI.getProp p (OI.Object r))
+                -- return (JSS.textFromJSString p, v)
+                return (T.Text p, v)
+            return (A.Object (H.fromList propVals))
+{-# INLINE aesonFromJSVal #-}
+
 #else
 rawDecode :: FromJSON a => BS.ByteString -> Maybe a
 rawDecode = decode . BL.fromStrict

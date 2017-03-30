@@ -43,6 +43,7 @@ import           Servant.API.BasicAuth
 import Control.Exception
 import           Control.Monad (liftM)
 import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import qualified Data.JSString.Text as T
 import qualified Data.Aeson                 as A
 import qualified Data.HashMap.Strict as H
 import qualified Data.Text.Internal as T
@@ -449,7 +450,7 @@ aesonFromJSVal r = case jsonTypeOf r of
             propVals <- forM props $ \p -> do
                 v <- MaybeT (aesonFromJSVal =<< OI.getProp p (OI.Object r))
                 -- return (JSS.textFromJSString p, v)
-                return (T.Text p, v)
+                return (T.textFromJSString p, v)
             return (A.Object (H.fromList propVals))
 {-# INLINE aesonFromJSVal #-}
 

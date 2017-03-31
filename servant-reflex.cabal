@@ -22,7 +22,6 @@ library
 
   other-modules:
     Servant.Common.BaseUrl
-    Servant.Common.MimeUnrender
     Servant.Common.Req
 
   hs-source-dirs: src

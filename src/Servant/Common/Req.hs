@@ -374,9 +374,8 @@ performRequestsCT
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp x = first T.pack .
-                     mimeUnrender ct .
-                     BL.fromStrict .
-                     TE.encodeUtf8 =<< note "No body text"
+                     mimeUnrender ct
+                     =<< note "No body text"
                      (_xhrResponse_responseText x)
   return $ fmap
       (\(t,rs) -> ffor rs $ \r -> case r of
@@ -400,21 +399,24 @@ foreign import javascript safe "new DataView($3,$1,$2)"
 foreign import javascript unsafe "console.log($1); $r = JSON['parse']($1);"
   js_jsonParse :: JSVal -> JSVal
 
-rawDecode :: (FromJSON a) => BS.ByteString -> Maybe a
+rawDecode :: (FromJSON a) => T.Text -> Maybe a
 rawDecode bs = do
   -- Below copied from Reflex.Dom.WebSocket.Foreign
   -- tmp <- Just $ unsafePerformIO $ putStrLn ("bs: " ++ BS.unpack bs)
   -- error ("bs: " ++ BS.unpack bs)
-  let (b, off, len) = fromByteString bs
+  -- let (b, off, len) = fromByteString bs
       -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
   -- tmp <- error (BS.unpack bs)
-  let jsv = if BS.length bs == 0
-            then error "ZERO!!" -- unsafePerformIO $ jsval . getArrayBuffer <$> create 0
-            else js_dataView off len $ jsval $ getArrayBuffer b
+
+  -- let jsv = if BS.length bs == 0
+  --           then unsafePerformIO $ jsval . getArrayBuffer <$> create 0
+  --           else js_dataView off len $ jsval $ getArrayBuffer b
+
+  let jsv = T.textToJSString bs
 
   -- let jsv = _ bs
   -- TODO pFromJSVal to avoid unsafePerformIO
-  let res = unsafePerformIO $ try $ aesonFromJSVal $ js_jsonParse jsv
+  let res = unsafePerformIO $ try $ aesonFromJSVal $ js_jsonParse $ jsval jsv
   case res of
     Left (_e :: SomeException) -> Nothing
     Right (v :: (Maybe Aeson.Value)) -> maybe Nothing go v
@@ -436,8 +438,7 @@ aesonFromJSVal r = do
     JSONFloat   -> liftM (A.Number . (fromFloatDigits :: Double -> Scientific))
          <$> fromJSVal r
     JSONBool    -> liftM A.Bool  <$> fromJSVal r
-    JSONString  -> liftM (A.String . ("TEST" <>)) <$> fromJSVal r
-    -- JSONArray   -> liftM (A.Array . V.fromList) <$> (fromJSVal r :: _)
+    JSONString  -> liftM A.String <$> fromJSVal r
     JSONArray   -> liftM (A.Array . V.fromList) <$>
                    runMaybeT (traverse (MaybeT . aesonFromJSVal) =<<
                     (MaybeT (fromJSVal r)))
@@ -447,7 +448,7 @@ aesonFromJSVal r = do
             propVals <- forM props $ \p -> do
                 v <- MaybeT (aesonFromJSVal =<< OI.getProp p (OI.Object r))
                 return (T.textFromJSString p, v)
-            return (A.Object (H.fromList propVals <> H.fromList [("extratest", A.Null)]))
+            return (A.Object (H.fromList propVals))
 {-# INLINE aesonFromJSVal #-}
 
 #else
@@ -525,11 +526,11 @@ eitherDecodeLenient input =
 
 -- | `eitherDecode`
 instance FromJSON a => MimeUnrender JSON a where
-    mimeUnrender _ bs =
+    mimeUnrender _ t =
 #ifdef ghcjs_HOST_OS
-        note "Raw JSON decode failure" $ rawDecode (BL.toStrict bs)
+        note "Raw JSON decode failure" $ rawDecode t -- (BL.toStrict bs)
 #else
-        eitherDecodeLenient bs
+        eitherDecodeLenient (BL.fromStrict $ TE.encodeUtf8 t)
 #endif
 
 -- -- | @urlDecodeAsForm@
@@ -540,31 +541,31 @@ instance FromJSON a => MimeUnrender JSON a where
 
 -- | @left show . TextL.decodeUtf8'@
 instance MimeUnrender PlainText TextL.Text where
-    mimeUnrender _ = left show . TextL.decodeUtf8'
+    mimeUnrender _ = return . TextL.fromStrict
 
 -- | @left show . TextS.decodeUtf8' . toStrict@
 instance MimeUnrender PlainText T.Text where
-    mimeUnrender _ = left show . TE.decodeUtf8' . BL.toStrict
+    mimeUnrender _ = return
 
 -- | @Right . BC.unpack@
 instance MimeUnrender PlainText String where
-    mimeUnrender _ = Right . BL.unpack
+    mimeUnrender _ = Right . T.unpack
 
 -- | @Right . id@
 instance MimeUnrender OctetStream BL.ByteString where
-    mimeUnrender _ = Right . id
+    mimeUnrender _ = return . TextL.encodeUtf8 . TextL.fromStrict
 
 -- | @Right . toStrict@
 instance MimeUnrender OctetStream BS.ByteString where
-    mimeUnrender _ = Right . BL.toStrict
+    mimeUnrender _ = Right . TE.encodeUtf8
 
 class Accept ctype => MimeUnrender ctype a where
-    mimeUnrender :: Proxy ctype -> BL.ByteString -> Either String a
+    mimeUnrender :: Proxy ctype -> T.Text -> Either String a
 
 class AllCTUnrender (list :: [*]) a where
     handleCTypeH :: Proxy list
                  -> BL.ByteString     -- Content-Type header
-                 -> BL.ByteString     -- Request body
+                 -> T.Text            -- Request body
                  -> Maybe (Either String a)
 
 instance ( AllMimeUnrender ctyps a ) => AllCTUnrender ctyps a where
@@ -581,7 +582,7 @@ canHandleAcceptH p (AcceptHeader h ) = isJust $ M.matchAccept (allMime p) h
 --------------------------------------------------------------------------
 class (AllMime list) => AllMimeUnrender (list :: [*]) a where
     allMimeUnrender :: Proxy list
-                    -> BL.ByteString
+                    -> T.Text
                     -> [(M.MediaType, Either String a)]
 
 instance AllMimeUnrender '[] a where

@@ -1,43 +1,64 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE UndecidableInstances #-}
+#ifdef ghcjs_HOST_OS
+{-# LANGUAGE JavaScriptFFI #-}
+#endif
 
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
+import           Control.Arrow              (left)
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Aeson
 import qualified Data.Aeson                 as Aeson
+import           Data.Aeson.Types
+import qualified Data.Aeson.Parser
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
-import           Data.Maybe                 (catMaybes, fromMaybe)
+import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import           Data.Functor.Compose
 import           Data.Monoid                ((<>))
 import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
+import qualified Data.Text.Lazy as TextL
+import qualified Data.Text.Lazy.Encoding             as TextL
 import           Data.Traversable           (forM)
 import           Data.Typeable
+import qualified Network.HTTP.Media.MediaType as M
+import qualified Network.HTTP.Media           as M
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
-import           Servant.API.ContentTypes   (JSON, MimeUnrender(..),
-                                             NoContent(..))
+import           Servant.API.ContentTypes   (Accept, AcceptHeader(..), AllMime(..), JSON, -- MimeUnrender(..),
+                                             PlainText,
+                                             NoContent(..),
+                                             OctetStream, contentType)
 import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
 
+import           Data.Attoparsec.ByteString.Char8 (endOfInput, parseOnly,
+                                                   skipSpace, (<?>))
+import           Data.String.Conversions          (cs)
 
 #ifdef ghcjs_HOST_OS
 import Control.Exception
@@ -340,44 +361,10 @@ bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = TE.decodeUtf8 . BL.toStrict
 
 
--- performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
---                      => Text
---                      -> Req t
---                      -> Dynamic t BaseUrl
---                      -> Event t tag -> m (Event t (ReqResult tag NoContent))
--- performRequestNoBody reqMeth req reqHost trigger = do
---   (resp, badReq) <- performRequest reqMeth req reqHost trigger
---   let decodeResp = const $ Right NoContent
---   return $ leftmost [ fmap (evalResponse decodeResp) resp
---                     , fmap (uncurry RequestFailure) badReq
---                     ]
-
-
--- performRequestCT
---     :: (SupportsServantReflex t m,
---         MimeUnrender ct a)
---     => Proxy ct
---     -> Text
---     -> Req t
---     -> Dynamic t BaseUrl
---     -> Event t tag
---     -> m (Event t (ReqResult tag a))
--- performRequestCT ct reqMeth req reqHost trigger = do
---   (resp, badReq) <- performRequest reqMeth req reqHost trigger
---   let decodeResp x = first T.pack .
---                      mimeUnrender ct .
---                      BL.fromStrict .
---                      TE.encodeUtf8 =<< note "No body text"
---                      (_xhrResponse_responseText x)
-
---   return $ leftmost [fmap (evalResponse decodeResp) resp
---                     , fmap (uncurry RequestFailure) badReq
---                     ]
-
 
 performRequestsCT
     :: (SupportsServantReflex t m,
-        MimeUnrender ct a, Traversable f, Typeable ct)
+        MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
     -> Dynamic t (f (Req t))
@@ -387,8 +374,8 @@ performRequestsCT
 performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
   let decodeResp x = first T.pack .
-                     mimeUnrender' ct .
-                     -- BL.fromStrict .
+                     mimeUnrender ct .
+                     BL.fromStrict .
                      TE.encodeUtf8 =<< note "No body text"
                      (_xhrResponse_responseText x)
   return $ fmap
@@ -398,24 +385,31 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
       )
       resps
 
-mimeUnrender' :: (MimeUnrender ct a, Typeable ct) => Proxy ct -> BS.ByteString -> Either String a
-mimeUnrender' p bs
-    -- | cantRawJson  = mimeUnrender p (BL.fromStrict bs)
-    | otherwise    = note "Raw JSON decode failure" $ rawDecode bs
-  where
-      cantRawJson = typeOf (Proxy :: Proxy JSON) /= typeOf p
+-- mimeUnrender' :: (MimeUnrender ct a, Typeable ct) => Proxy ct -> BS.ByteString -> Either String a
+-- mimeUnrender' p bs
+--     -- | cantRawJson  = mimeUnrender p (BL.fromStrict bs)
+--     | otherwise    = note "Raw JSON decode failure" $ rawDecode bs
+--   where
+--       cantRawJson = typeOf (Proxy :: Proxy JSON) /= typeOf p
 
 -- copied from http://lpaste.net/6122658287709061120
 #ifdef ghcjs_HOST_OS
-foreign import javascript safe "new DataView($3,$1,$2)" js_dataView :: Int -> Int -> JSVal -> JSVal
-foreign import javascript unsafe "JSON['parse']($1)" js_jsonParse :: JSVal -> JSVal
+foreign import javascript safe "new DataView($3,$1,$2)"
+  js_dataView :: Int -> Int -> JSVal -> JSVal
+
+foreign import javascript unsafe "console.log($1); $r = JSON['parse']($1);"
+  js_jsonParse :: JSVal -> JSVal
+
 rawDecode :: (FromJSON a) => BS.ByteString -> Maybe a
 rawDecode bs = do
   -- Below copied from Reflex.Dom.WebSocket.Foreign
+  -- tmp <- Just $ unsafePerformIO $ putStrLn ("bs: " ++ BS.unpack bs)
+  -- error ("bs: " ++ BS.unpack bs)
   let (b, off, len) = fromByteString bs
       -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
+  -- tmp <- error (BS.unpack bs)
   let jsv = if BS.length bs == 0
-            then unsafePerformIO $ jsval . getArrayBuffer <$> create 0
+            then error "ZERO!!" -- unsafePerformIO $ jsval . getArrayBuffer <$> create 0
             else js_dataView off len $ jsval $ getArrayBuffer b
 
   -- let jsv = _ bs
@@ -432,7 +426,10 @@ rawDecode bs = do
 
 -- copied from http://lpaste.net/raw/353535  Thanks ncl28!
 aesonFromJSVal :: JSVal -> IO (Maybe A.Value)
-aesonFromJSVal r = case jsonTypeOf r of
+aesonFromJSVal r = do
+  putStrLn "Hello"
+  print $ jsonTypeOf r
+  case jsonTypeOf r of
     JSONNull    -> return (Just A.Null)
     JSONInteger -> liftM (A.Number . flip scientific 0 . (toInteger :: Int -> Integer))
          <$> fromJSVal r
@@ -502,3 +499,98 @@ note e = maybe (Left e) Right
 fmapL :: (e -> e') -> Either e a -> Either e' a
 fmapL _ (Right a) = Right a
 fmapL f (Left e)  = Left (f e)
+
+
+--------------------------------------------------------------------------
+-- * MimeUnrender Instances
+
+-- | Like 'Data.Aeson.eitherDecode' but allows all JSON values instead of just
+-- objects and arrays.
+--
+-- Will handle trailing whitespace, but not trailing junk. ie.
+--
+-- >>> eitherDecodeLenient "1 " :: Either String Int
+-- Right 1
+--
+-- >>> eitherDecodeLenient "1 junk" :: Either String Int
+-- Left "trailing junk after valid JSON: endOfInput"
+eitherDecodeLenient :: FromJSON a => BL.ByteString -> Either String a
+eitherDecodeLenient input =
+    parseOnly parser (BL.toStrict input) >>= parseEither parseJSON
+  where
+    parser = skipSpace
+          *> Data.Aeson.Parser.value
+          <* skipSpace
+          <* (endOfInput <?> "trailing junk after valid JSON")
+
+-- | `eitherDecode`
+instance FromJSON a => MimeUnrender JSON a where
+    mimeUnrender _ bs =
+#ifdef ghcjs_HOST_OS
+        note "Raw JSON decode failure" $ rawDecode (BL.toStrict bs)
+#else
+        eitherDecodeLenient bs
+#endif
+
+-- -- | @urlDecodeAsForm@
+-- -- Note that the @mimeUnrender p (mimeRender p x) == Right x@ law only
+-- -- holds if every element of x is non-null (i.e., not @("", "")@)
+-- instance FromForm a => MimeUnrender FormUrlEncoded a where
+--     mimeUnrender _ = left TextS.unpack . urlDecodeAsForm
+
+-- | @left show . TextL.decodeUtf8'@
+instance MimeUnrender PlainText TextL.Text where
+    mimeUnrender _ = left show . TextL.decodeUtf8'
+
+-- | @left show . TextS.decodeUtf8' . toStrict@
+instance MimeUnrender PlainText T.Text where
+    mimeUnrender _ = left show . TE.decodeUtf8' . BL.toStrict
+
+-- | @Right . BC.unpack@
+instance MimeUnrender PlainText String where
+    mimeUnrender _ = Right . BL.unpack
+
+-- | @Right . id@
+instance MimeUnrender OctetStream BL.ByteString where
+    mimeUnrender _ = Right . id
+
+-- | @Right . toStrict@
+instance MimeUnrender OctetStream BS.ByteString where
+    mimeUnrender _ = Right . BL.toStrict
+
+class Accept ctype => MimeUnrender ctype a where
+    mimeUnrender :: Proxy ctype -> BL.ByteString -> Either String a
+
+class AllCTUnrender (list :: [*]) a where
+    handleCTypeH :: Proxy list
+                 -> BL.ByteString     -- Content-Type header
+                 -> BL.ByteString     -- Request body
+                 -> Maybe (Either String a)
+
+instance ( AllMimeUnrender ctyps a ) => AllCTUnrender ctyps a where
+    handleCTypeH _ ctypeH body = M.mapContentMedia lkup (cs ctypeH)
+      where lkup = allMimeUnrender (Proxy :: Proxy ctyps) body
+
+
+canHandleAcceptH :: AllMime list => Proxy list -> AcceptHeader -> Bool
+canHandleAcceptH p (AcceptHeader h ) = isJust $ M.matchAccept (allMime p) h
+
+
+--------------------------------------------------------------------------
+-- Check that all elements of list are instances of MimeUnrender
+--------------------------------------------------------------------------
+class (AllMime list) => AllMimeUnrender (list :: [*]) a where
+    allMimeUnrender :: Proxy list
+                    -> BL.ByteString
+                    -> [(M.MediaType, Either String a)]
+
+instance AllMimeUnrender '[] a where
+    allMimeUnrender _ _ = []
+
+instance ( MimeUnrender ctyp a
+         , AllMimeUnrender ctyps a
+         ) => AllMimeUnrender (ctyp ': ctyps) a where
+    allMimeUnrender _ val = (contentType pctyp, mimeUnrender pctyp val)
+                           :(allMimeUnrender pctyps val)
+        where pctyp = Proxy :: Proxy ctyp
+              pctyps = Proxy :: Proxy ctyps

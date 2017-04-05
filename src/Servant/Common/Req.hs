@@ -396,7 +396,7 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
 foreign import javascript safe "new DataView($3,$1,$2)"
   js_dataView :: Int -> Int -> JSVal -> JSVal
 
-foreign import javascript unsafe "JSON['parse']($1);"
+foreign import javascript unsafe "JSON['parse']($1)"
   js_jsonParse :: JSVal -> JSVal
 
 rawDecode :: (FromJSON a) => T.Text -> Maybe a

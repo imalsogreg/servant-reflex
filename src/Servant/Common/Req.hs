@@ -401,21 +401,9 @@ foreign import javascript unsafe "console.log($1); $r = JSON['parse']($1);"
 
 rawDecode :: (FromJSON a) => T.Text -> Maybe a
 rawDecode bs = do
-  -- Below copied from Reflex.Dom.WebSocket.Foreign
-  -- tmp <- Just $ unsafePerformIO $ putStrLn ("bs: " ++ BS.unpack bs)
-  -- error ("bs: " ++ BS.unpack bs)
-  -- let (b, off, len) = fromByteString bs
-      -- x = return $ js_dataView off len  $ jsval $ getArrayBuffer b :: _
-  -- tmp <- error (BS.unpack bs)
-
-  -- let jsv = if BS.length bs == 0
-  --           then unsafePerformIO $ jsval . getArrayBuffer <$> create 0
-  --           else js_dataView off len $ jsval $ getArrayBuffer b
 
   let jsv = T.textToJSString bs
 
-  -- let jsv = _ bs
-  -- TODO pFromJSVal to avoid unsafePerformIO
   let res = unsafePerformIO $ try $ aesonFromJSVal $ js_jsonParse $ jsval jsv
   case res of
     Left (_e :: SomeException) -> Nothing
@@ -429,8 +417,6 @@ rawDecode bs = do
 -- copied from http://lpaste.net/raw/353535  Thanks ncl28!
 aesonFromJSVal :: JSVal -> IO (Maybe A.Value)
 aesonFromJSVal r = do
-  putStrLn "Hello"
-  print $ jsonTypeOf r
   case jsonTypeOf r of
     JSONNull    -> return (Just A.Null)
     JSONInteger -> liftM (A.Number . flip scientific 0 . (toInteger :: Int -> Integer))

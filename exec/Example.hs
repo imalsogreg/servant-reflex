@@ -175,7 +175,7 @@ run = mdo
     let dQ = Right . Question <$> traceDyn "will send: " txt
     rr  <- qna dQ ev
     el "p" $
-      dynText =<< holdDyn "No Answer" (unAnswer <$> fmapMaybe reqSuccess rr)
+      dynText =<< holdDyn "No Answer" (T.pack . show <$> fmapMaybe reqSuccess rr)
 
 showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =

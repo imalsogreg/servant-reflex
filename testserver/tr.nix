@@ -1,9 +1,9 @@
 { reflex-platform, ... }:
 let
 
-  dontCheck = (import <nixpkgs> {}).pkgs.haskell.lib.dontCheck;
+  dontCheck = reflex-platform.lib.dontCheck;
   cabal2nixResult = reflex-platform.cabal2nixResult;
-  nixpkgs = (import <nixpkgs> {});
+  
 in
 reflex-platform.ghc.override {
   overrides = self: super: { 
@@ -18,6 +18,9 @@ reflex-platform.ghc.override {
      snap-loader-static  = dontCheck (self.callPackage (cabal2nixResult ../deps/servant-snap/deps/snap-loader-static) {});
      snap-loader-dynamic = dontCheck (self.callPackage (cabal2nixResult ../deps/servant-snap/deps/snap-loader-dynamic) {});
      hspec-snap          = dontCheck (self.callPackage (cabal2nixResult ../deps/servant-snap/deps/hspec-snap) {});
+
+     servant             = dontCheck (self.callPackage (cabal2nixResult ../deps/servant/servant) {});
+     http-api-data       = dontCheck (self.callPackage (cabal2nixResult ../deps/http-api-data) {});
 
      # servant-foreign     = dontCheck (self.callPackage (cabal2nixResult ../deps/servant-snap/deps/servant/servant-foreign) {});
      # servant-js          = dontCheck (self.callPackage (cabal2nixResult ../deps/servant-snap/deps/servant/servant-js) {});

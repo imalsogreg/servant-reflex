@@ -7,7 +7,7 @@ let
 in
 reflex-platform.ghcjs.override {
   overrides = self: super: { 
-     # servant       = dc (self.callPackage (c2n deps/servant/servant) {});
-     # http-api-data = dc (self.callPackage (c2n deps/http-api-data) {});
+     servant       = dc (self.callPackage (c2n deps/servant/servant) {});
+     http-api-data = dc (self.callPackage (c2n deps/http-api-data) {});
   };
 }

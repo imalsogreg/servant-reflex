@@ -68,7 +68,7 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> 
           liftIO $ do
             putStrLn $ "qna got: " ++ show q
             T.putStrLn $ unQuestion q
-          return $ Answer $ unQuestion q
+          return $ Answer (unQuestion q) ["Hi", "a", "test",""]
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.

@@ -18,14 +18,17 @@ instance FromJSON Question where
   parseJSON (Object v) = Question <$> v .: "question"
   parseJSON x          = typeMismatch "Couldn't find key 'question'" x
 
-newtype Answer = Answer { unAnswer :: Text } deriving (Show)
+data Answer = Answer {
+    answer    :: Text
+  , certainty :: [Text]
+  } deriving (Show)
 
 instance ToJSON Answer where
-  toJSON (Answer txt) = object ["answer" .= txt]
+  toJSON (Answer txt crt) = object ["answer" .= txt, "certainty" .= crt]
 
 instance FromJSON Answer where
-  parseJSON (Object v) = Answer <$> v .: "answer"
-  parseJSON x          = typeMismatch "Couldn't find key 'answer'" x
+  parseJSON (Object v) = Answer <$> v .: "answer" <*> v .: "certainty"
+  parseJSON x          = typeMismatch "Parse error" x
 
 
 -- | API spec for server, client, and docs

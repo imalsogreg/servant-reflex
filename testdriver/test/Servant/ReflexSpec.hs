@@ -1,12 +1,11 @@
-{-# language OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Servant.ReflexSpec where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class (liftIO)
-import Data.Monoid ((<>))
 import qualified Data.Text as T
-import Data.Foldable
 import Test.WebDriver.Commands.Wait
 import Test.Hspec.WebDriver
 
@@ -48,9 +47,9 @@ spec = do
       it "can get an int or unit from the API" $ runWD $ do
         let outEl = ByCSS "div.unit-int-response p"
         clickingShouldCause (ByCSS "div.int-button > button") outEl 0.1
-          (\i o -> o `hasInfixText` "Just \"100\"")
+          (\_ o -> o `hasInfixText` "Just \"100\"")
         clickingShouldCause (ByCSS "div.unit-button > button") outEl 0.1
-          (\i o -> o `hasInfixText` "Just \"[[]]\"")
+          (\_ o -> o `hasInfixText` "Just \"[[]]\"")
 
       let setupGreeting = do
             iName       <- findElem $ ByCSS ".name-input input"
@@ -61,14 +60,14 @@ spec = do
             return (iName, iGreetings, bGusto, goBtn, greetingRes)
 
       it "handle query params" $ runWD $ do
-        (iName, iGreetings, bGusto, goBtn, greetingRes) <- setupGreeting
+        (iName, iGreetings, _bGusto, goBtn, greetingRes) <- setupGreeting
         sendKeys "Haskell" iName
         sendKeys "Hello Hi" iGreetings
         click goBtn
         greetingRes `shouldHaveText` "Hello, and Hi, Haskell"
 
       it "handles queryflag" $ runWD $ do
-        (iName, iGreetings, bGusto, goBtn, greetingRes) <- setupGreeting
+        (_iName, _iGreetings, bGusto, goBtn, greetingRes) <- setupGreeting
         click bGusto
         click goBtn
         greetingRes `shouldHaveText` "HELLO, AND HI, HASKELL"

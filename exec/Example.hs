@@ -30,6 +30,7 @@ api = Proxy
 
 main :: IO ()
 main = mainWidget $ do
+    el "h1" $ text "Wowzers!"
     divClass "example-base" run
     divClass "example-multi" runMulti
 
@@ -64,9 +65,9 @@ runMulti = do
         grts <- fmap (fmap T.words . value) $ divClass "" $ do
             text "Greetings"
             textInput def
-        gust <- fmap (value) $ divClass "gusto-input" $ checkbox False def
+        gust <- fmap value $ divClass "gusto-input" $ checkbox False def
         b <- button "Go"
-        r' <- sayHi (fmap QParamSome <$> nms) (fmap (:[]) $ grts) (constDyn [True, False]) (1 <$ b)
+        r' <- sayHi (fmap QParamSome <$> nms) (fmap (:[]) grts) (constDyn [True, False]) (1 <$ b)
 
         dynText =<< holdDyn "Waiting" (T.pack . show . catMaybes . fmap reqSuccess  <$> r')
 
@@ -103,11 +104,11 @@ run = mdo
     unitResponse <- getUnit $ tag (current reqCount) unitBtn
     intResponse :: Event t (ReqResult Int Int) <- getInt $ tag (current reqCount) intBtn
 
-    score <- foldDyn (+) 0 (fmapMaybe reqSuccess (intResponse))
+    score <- foldDyn (+) 0 (fmapMaybe reqSuccess intResponse)
 
-    r <- holdDyn "Waiting" $ fmap showXhrResponse $
-         leftmost [fmapMaybe response (unitResponse)
-                  ,fmapMaybe response (intResponse)
+    r <- holdDyn "Waiting" $ showXhrResponse <$>
+         leftmost [fmapMaybe response unitResponse
+                  ,fmapMaybe response intResponse
                   ]
     divClass "unit-int-response" $ el "p" $ dynText r >> el "br" (return ()) >> text "Total: " >> display score
     return (unitBtn, intBtn)
@@ -116,14 +117,14 @@ run = mdo
 
     text "Name"
     el "br" $ return ()
-    inp :: Dynamic t Text <- fmap value $ divClass "name-input" $ (textInput def)
+    inp :: Dynamic t Text <- fmap value $ divClass "name-input" $ textInput def
     let checkedName = fmap (\i -> bool (QParamSome i) (QParamInvalid "Need a name") (T.null i)) inp
     el "br" $ return ()
 
     text "Greetings (space-separated)"
     el "br" $ return ()
     greetings <- fmap (fmap T.words . value) $
-      divClass "greetings-input" $ (textInput def)
+      divClass "greetings-input" $ textInput def
 
     el "br" $ return ()
 
@@ -135,23 +136,23 @@ run = mdo
 
     resp <- sayhi checkedName greetings gusto (tag (current reqCount) triggers)
     divClass "greeting-response" $ dynText =<<
-      holdDyn "No hi yet" (leftmost [ fmapMaybe reqSuccess (resp)
-                                    , fmapMaybe reqFailure (resp)])
+      holdDyn "No hi yet" (leftmost [ fmapMaybe reqSuccess resp
+                                    , fmapMaybe reqFailure resp])
     return sayHiClicks
 
   dblBtn <- elClass "div" "demo-group" $ do
     text "A Double to double"
     el "br" $ return ()
     dblinp <- fmap value $ divClass "double-input" $ textInput def
-    (dblBtn) <- divClass "double-button" $ button "Double it"
-    dblResp <- dbl (fmap (note "read failure" . readMaybe . T.unpack) $
+    dblBtn <- divClass "double-button" $ button "Double it"
+    dblResp <- dbl ((note "read failure" . readMaybe . T.unpack) <$>
                           dblinp) (tag (current reqCount) dblBtn)
     divClass "double-errors" $ dynText =<<
-      holdDyn "(no errors)" (fmapMaybe reqFailure (dblResp))
+      holdDyn "(no errors)" (fmapMaybe reqFailure dblResp)
     el "br" (return ())
     divClass "double-result" $ el "p" $ dynText =<<
-      holdDyn "No number yet" (fmap tShow $
-                               fmapMaybe reqSuccess (dblResp))
+      holdDyn "No number yet" (tShow <$>
+                               fmapMaybe reqSuccess dblResp)
     return dblBtn
 
   mpGo <- elClass "div" "demo-group" $ do
@@ -159,9 +160,9 @@ run = mdo
     b <- value <$> checkbox False def
     mpGo <- button "Test"
     multiResp <- multi b (tag (current reqCount) mpGo)
-    dynText =<< holdDyn "No res yet" (fmap tShow $
-                                      fmapMaybe reqSuccess $
-                                      (multiResp))
+    dynText =<< holdDyn "No res yet" (tShow <$>
+                                      fmapMaybe reqSuccess
+                                      multiResp)
     return mpGo
 
   return ()
@@ -171,7 +172,7 @@ run = mdo
   elClass "div" "demo-group" $ do
     text "JSON Unicode encoding test"
     txt <- value <$> textInput def
-    ev  <- fmap (1 <$) $ button "Question"
+    ev  <- (1 <$) <$> button "Question"
     let dQ = Right . Question <$> traceDyn "will send: " txt
     rr  <- qna dQ ev
     el "p" $

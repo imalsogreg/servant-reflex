@@ -26,6 +26,7 @@ import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
 import           Reflex.Dom                 hiding (tag)
+import Reflex.Dom.Xhr (newXMLHttpRequest)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
@@ -107,6 +108,10 @@ data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
                  | QueryPartParams (Dynamic t [Text])
                  | QueryPartFlag   (Dynamic t Bool)
 
+data QueryPartIO = QueryPartParamIO  (Maybe Text)
+                 | QueryPartParamsIO [Text]
+                 | QueryPartFlagIO   Bool
+
 
 -------------------------------------------------------------------------------
 -- The data structure used to build up request information while traversing
@@ -119,6 +124,16 @@ data Req t = Req
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
+  }
+
+data ReqIO = ReqIO
+  { reqMethodIO :: Text
+  , reqPathPartsIO :: [Text]
+  , qParamsIO :: [(Text, QueryPartIO)]
+  , reqBodyIO :: Maybe (BL.ByteString, Text)
+  , headersIO :: [(Text, Text)]
+  , respHeadersIO :: XhrResponseHeaders
+  , authDataIO :: Maybe BasicAuthData
   }
 
 defReq :: Req t
@@ -137,7 +152,7 @@ reqToReflexRequest
     => Text
     -> Dynamic t BaseUrl
     -> Req t
-    -> (Dynamic t (Either Text (XhrRequest XhrPayload)))
+    -> Dynamic t (Either Text (XhrRequest XhrPayload))
 reqToReflexRequest reqMeth reqHost req =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
@@ -168,7 +183,9 @@ reqToReflexRequest reqMeth reqHost req =
 
       queryPartStrings :: [Dynamic t (Maybe (Either Text Text))]
       queryPartStrings = map queryPartString (qParams req)
-      queryPartStrings' = fmap (sequence . catMaybes) $ sequence queryPartStrings :: Dynamic t (Either Text [Text])
+
+      queryPartStrings' :: Dynamic t (Either Text [Text])
+      queryPartStrings' = sequence . catMaybes <$> sequence queryPartStrings :: Dynamic t (Either Text [Text])
       queryString :: Dynamic t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
       xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q)
@@ -182,17 +199,17 @@ reqToReflexRequest reqMeth reqHost req =
       xhrHeaders :: Dynamic t (Either Text [(Text, Text)])
       xhrHeaders = (fmap sequence . sequence . fmap f . headers) req
         where
-          f = \(headerName, dynam) ->
+          f (headerName, dynam) =
                 fmap (fmap (\rightVal -> (headerName, rightVal))) dynam
 
       mkConfigBody :: Either Text [(Text,Text)]
-                   -> (Either Text (BL.ByteString, Text))
+                   -> Either Text (BL.ByteString, Text)
                    -> Either Text (XhrRequestConfig XhrPayload)
       mkConfigBody ehs rb = case (ehs, rb) of
                   (_, Left e)                     -> Left e
                   (Left e, _)                     -> Left e
                   (Right hs, Right (bBytes, bCT)) ->
-                    Right $ XhrRequestConfig
+                    Right XhrRequestConfig
                       { _xhrRequestConfig_sendData = bytesToPayload bBytes
                       , _xhrRequestConfig_headers  =
                                     Map.insert "Content-Type" bCT (Map.fromList hs)
@@ -229,9 +246,102 @@ reqToReflexRequest reqMeth reqHost req =
         Nothing -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (XhrRequest reqMeth) xhrUrl (addAuth xhrOpts)
 
   in xhrReq
+
+reqToReflexRequestIO
+  :: Text
+  -> BaseUrl
+  -> ReqIO
+  -> XhrRequest XhrPayload
+reqToReflexRequestIO reqMeth reqHost req =
+    let t :: [Text]
+        t = reverse $ reqPathPartsIO req
+
+        baseUrl :: Text
+        baseUrl = showBaseUrl reqHost
+
+        urlParts :: [Text]
+        urlParts = t
+
+        urlPath :: Text
+        urlPath = T.intercalate "/" urlParts
+
+        queryPartString :: (Text, QueryPartIO) -> Maybe Text
+        queryPartString (pName, qp) = case qp of
+          QueryPartParamIO p -> case p of
+            Just a -> Just (pName <> "=" <> a)
+            _ -> Nothing
+          QueryPartParamsIO ps ->
+            if null ps
+            then Nothing
+            else Just (T.intercalate "&" (fmap (\p -> pName <> "=" <> p) ps))
+          QueryPartFlagIO fl -> if fl
+            then Just pName
+            else Nothing
+
+
+        queryPartStrings :: [Maybe Text]
+        queryPartStrings = map queryPartString (qParamsIO req)
+
+        queryPartStrings' :: [Text]
+        queryPartStrings' = catMaybes queryPartStrings
+
+        queryString :: Text = T.intercalate "&" queryPartStrings'
+
+        xhrUrl = (\a p q -> a </> if T.null q then p else p <> "?" <> q)
+            baseUrl urlPath queryString
+          where
+            (</>) :: Text -> Text -> Text
+            x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y
+                    | otherwise = x <> "/" <> y
+
+
+        xhrHeaders :: [(Text, Text)]
+        xhrHeaders = headersIO req
+
+        mkConfigBody :: [(Text,Text)]
+                     -> (BL.ByteString, Text)
+                     -> XhrRequestConfig XhrPayload
+        mkConfigBody hs (bBytes, bCT) =
+                       XhrRequestConfig
+                        { _xhrRequestConfig_sendData = bytesToPayload bBytes
+                        , _xhrRequestConfig_headers  =
+                                      Map.insert "Content-Type" bCT (Map.fromList hs)
+                        , _xhrRequestConfig_user = Nothing
+                        , _xhrRequestConfig_password = Nothing
+                        , _xhrRequestConfig_responseType = Nothing
+                        , _xhrRequestConfig_withCredentials = False
+                        , _xhrRequestConfig_responseHeaders = def
+                        }
+
+        xhrOpts :: XhrRequestConfig XhrPayload
+        xhrOpts = case reqBodyIO req of
+          Nothing    -> def { _xhrRequestConfig_headers = Map.fromList xhrHeaders
+                            , _xhrRequestConfig_user = Nothing
+                            , _xhrRequestConfig_password = Nothing
+                            , _xhrRequestConfig_responseType = Nothing
+                            , _xhrRequestConfig_sendData = ""
+                            , _xhrRequestConfig_withCredentials = False
+                            }
+          Just rBody -> mkConfigBody xhrHeaders rBody
+
+        mkAuth :: BasicAuthData -> XhrRequestConfig x -> XhrRequestConfig x
+        mkAuth (BasicAuthData u p) config =  config
+          { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
+          , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
+
+        addAuth :: XhrRequestConfig x
+                -> XhrRequestConfig x
+        addAuth xhr = case authDataIO req of
+          Nothing -> xhr
+          Just auth -> mkAuth auth xhr
+
+        xhrReq = (XhrRequest reqMeth) xhrUrl (addAuth xhrOpts)
+
+    in xhrReq
+
 
 -- * performing requests
 
@@ -275,9 +385,8 @@ performSomeRequestsAsync'
 performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs
   resps <- forM rs $ \r -> case r of
-      Left e -> do
-          resp <- liftIO $ newMVar (Left e)
-          return resp
+      Left e -> liftIO $ newMVar (Left e)
+
       Right r' -> do
           resp <- liftIO newEmptyMVar
           _ <- newXhr r' $ liftIO . putMVar resp . Right
@@ -290,7 +399,7 @@ performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb ->
 -- | This function actually performs the request.
 performRequest :: forall t m tag .(SupportsServantReflex t m)
                => Text
-               -> (Req t)
+               -> Req t
                -> Dynamic t BaseUrl
                -> Event t tag
                -> m (Event t (tag, XhrResponse), Event t (tag, Text))
@@ -304,6 +413,32 @@ performRequest reqMeth req reqHost trigger = do
   resps <- performRequestsAsync okReqs
 
   return (resps, badReqs)
+
+
+-- | This function actually performs the request.
+performRequestIO :: forall t m tag. (SupportsServantReflex t m)
+                 => Text
+                 -> ReqIO
+                 -> BaseUrl
+                 -> tag
+                 -> m (Either (tag, XhrResponse) (tag, Text))
+performRequestIO reqMeth req reqHost trigger = do
+
+  let xhrReq  = reqToReflexRequestIO reqMeth reqHost req
+  let reqs    = (trigger ,xhrReq )
+
+  -- resps <- performRequestsAsync okReqs
+
+  -- let x :: _ = newXMLHttpRequestWithError
+
+  -- return (resps, badReqs)
+  undefined
+
+doThing :: (IsXhrPayload a, HasWebView IO) => XhrRequest a -> IO XhrResponse
+doThing req = do
+    v <- newEmptyMVar
+    newXMLHttpRequest req $ putMVar v
+    takeMVar v
 
 
 type XhrPayload = T.Text
@@ -368,6 +503,30 @@ performRequestsCT ct reqMeth reqs reqHost trigger = do
               Right g -> evalResponse decodeResp (t,g)
       )
       resps
+
+
+performRequestsCTIO
+    :: (SupportsServantReflex t m,
+      MimeUnrender ct a, Traversable f)
+    => Proxy ct
+    -> Text
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> Event t tag
+    -> m (Event t (f (ReqResult tag a)))
+performRequestsCTIO ct reqMeth reqs reqHost trigger = do
+    resps <- performRequests reqMeth reqs reqHost trigger
+    let decodeResp x = first T.pack .
+                       mimeUnrender ct .
+                       BL.fromStrict .
+                       TE.encodeUtf8 =<< note "No body text"
+                       (_xhrResponse_responseText x)
+    return $ fmap
+        (\(t,rs) -> ffor rs $ \r -> case r of
+                Left e  -> RequestFailure t e
+                Right g -> evalResponse decodeResp (t,g)
+        )
+        resps
 
 
 performRequestsNoBody

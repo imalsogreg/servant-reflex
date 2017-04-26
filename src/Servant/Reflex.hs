@@ -1,17 +1,18 @@
-{-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE AllowAmbiguousTypes    #-}
+{-# LANGUAGE CPP                    #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE InstanceSigs           #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE PolyKinds              #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 -- #include "overlapping-compat.h"
 -- | This module provides 'client' which can automatically generate
@@ -59,8 +60,8 @@ import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
                                          SupportsServantReflex, baseUrlWidget,
                                          showBaseUrl)
 import           Servant.Common.Req     (QParam (..), QueryPart (..), Req,
-                                         ReqResult (..), addHeader, authData,
-                                         defReq, evalResponse,
+                                         ReqIO, ReqResult (..), addHeader,
+                                         authData, defReq, evalResponse,
                                          performRequestsCT,
                                          performRequestsNoBody,
                                          performSomeRequestsAsync,
@@ -93,17 +94,35 @@ client p q t = clientWithRoute p q t defReq
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
-class HasClient t m layout (tag :: *) where
+class HasClient t m layout (tag :: *) | m -> t where
   type Client t m layout tag :: *
-  clientWithRoute :: Proxy layout -> Proxy m -> Proxy tag -> Req t -> Dynamic t BaseUrl -> Client t m layout tag
-
+  type ClientIO m layout tag :: *
+  clientWithRoute
+    :: Proxy layout
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> Client t m layout tag
+  clientWithRouteIO
+    :: Proxy layout
+    -> Proxy m
+    -> Proxy tag
+    -> ReqIO
+    -> BaseUrl
+    -> ClientIO m layout tag
 
 instance (HasClient t m a tag, HasClient t m b tag) => HasClient t m (a :<|> b) tag where
   type Client t m (a :<|> b) tag = Client t m a tag :<|> Client t m b tag
+  type ClientIO m (a :<|> b) tag = ClientIO m a tag :<|> ClientIO m b tag
 
   clientWithRoute Proxy q pTag req baseurl =
     clientWithRoute (Proxy :: Proxy a) q pTag req baseurl :<|>
     clientWithRoute (Proxy :: Proxy b) q pTag req baseurl
+
+  clientWithRouteIO Proxy q pTag req baseurl =
+    clientWithRouteIO (Proxy :: Proxy a) q pTag req baseurl :<|>
+    clientWithRouteIO (Proxy :: Proxy b) q pTag req baseurl
 
 
 -- Capture. Example:
@@ -124,11 +143,21 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
   type Client t m (Capture capture a :> sublayout) tag =
     Dynamic t (Either Text a) -> Client t m sublayout tag
 
+  type ClientIO m (Capture capture a :> sublayout) tag =
+      a -> ClientIO m sublayout tag
+
   clientWithRoute Proxy q t req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
                     q t
                     (prependToPathParts p req)
                     baseurl
+    where p = (fmap . fmap) toUrlPiece val
+
+  clientWithRouteIO Proxy q t req baseurl val =
+    clientWithRouteIO (Proxy :: Proxy sublayout)
+                      q t
+                      (prependToPathParts p req)
+                      baseurl
     where p = (fmap . fmap) toUrlPiece val
 
 
@@ -137,13 +166,24 @@ instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' a) tag where
+
   type Client t m (Verb method status cts' a) tag =
     Event t tag -> m (Event t (ReqResult tag a))
+
+  type ClientIO m (Verb method status cts' a) tag =
+    tag -> m (ReqResult tag a)
+
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
   clientWithRoute Proxy _ _ req baseurl trigs =
     -- performRequestCT (Proxy :: Proxy ct) method req' baseurl trigs
       fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl trigs
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+            req' = req { reqMethod = method }
+
+  clientWithRouteIO Proxy _ _ req baseurl tag =
+    -- performRequestCT (Proxy :: Proxy ct) method req' baseurl trigs
+      fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl tag
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 

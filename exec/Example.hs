@@ -19,7 +19,7 @@ import Servant.API
 import API
 import Data.Proxy
 import Text.Read (readMaybe)
-import Reflex.Dom
+import Reflex.Dom hiding (run)
 ------------------------------------------------------------------------------
 import Servant.Reflex
 import Servant.Reflex.Multi

@@ -25,8 +25,9 @@ import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
+import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
 import           Reflex.Dom                 hiding (tag)
-import Reflex.Dom.Xhr (newXMLHttpRequest)
+import           Reflex.Dom.Xhr             (newXMLHttpRequest)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
@@ -139,12 +140,24 @@ data ReqIO = ReqIO
 defReq :: Req t
 defReq = Req "GET" [] [] Nothing [] def Nothing
 
+defReqIO :: ReqIO
+defReqIO = ReqIO "GET" [] [] Nothing [] def Nothing
+
 prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
+
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
+
+prependToPathPartsIO :: Text -> ReqIO -> ReqIO
+prependToPathPartsIO p req =
+  req { reqPathPartsIO = p : reqPathPartsIO req }
+
+addHeaderIO :: (ToHttpApiData a) => Text -> a -> ReqIO -> ReqIO
+addHeaderIO name val req = req { headersIO = (name, (TE.decodeUtf8 . toHeader) val) : headersIO req }
+
 
 
 reqToReflexRequest
@@ -362,9 +375,25 @@ performRequests reqMeth rs reqHost trigger = do
   resps <- performSomeRequestsAsync reqs
   return $ getCompose <$> resps
 
+
+performRequestsIO :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
+                => Text
+                -> Event t (f ReqIO)
+                -> BaseUrl
+                -> m (Event t (f XhrResponse))
+performRequestsIO reqMeth rs reqHost = do
+  -- let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
+  -- let xhrReqs = join $ (\(fxhr :: f (Req t)) -> sequence $ reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
+  let xhrReqs :: (Event t (f (XhrRequest XhrPayload))) = fmap (reqToReflexRequestIO reqMeth reqHost) <$> rs
+  -- let reqs    = attachPromptlyDynWith (\fxhr t -> fxhr) xhrReqs trigger
+  resps <- performRequestsAsync xhrReqs
+  return $ resps
+
+
 -- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
 performSomeRequestsAsync
-    :: (MonadIO (Performable m),
+    :: (MonadJSM (Performable m),
+        MonadJSM (Performable m),
         HasWebView (Performable m),
         PerformEvent t m,
         TriggerEvent t m,
@@ -377,10 +406,10 @@ performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap re
 
 ------------------------------------------------------------------------------
 -- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
--- that accepts 'f (Either e (XhrRequestb))' events
+-- that accepts 'f (Either e (XhrRequest))' events
 performSomeRequestsAsync'
-    :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
-    => (XhrRequest b -> (a -> IO ()) -> Performable m XMLHttpRequest)
+    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
+    => (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
     -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
 performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs
@@ -415,30 +444,30 @@ performRequest reqMeth req reqHost trigger = do
   return (resps, badReqs)
 
 
--- | This function actually performs the request.
-performRequestIO :: forall t m tag. (SupportsServantReflex t m)
-                 => Text
-                 -> ReqIO
-                 -> BaseUrl
-                 -> tag
-                 -> m (Either (tag, XhrResponse) (tag, Text))
-performRequestIO reqMeth req reqHost trigger = do
+-- -- | This function actually performs the request.
+-- performRequestIO :: forall t m tag. (SupportsServantReflex t m)
+--                  => Text
+--                  -> ReqIO
+--                  -> BaseUrl
+--                  -> tag
+--                  -> m (Either (tag, XhrResponse) (tag, Text))
+-- performRequestIO reqMeth req reqHost trigger = do
 
-  let xhrReq  = reqToReflexRequestIO reqMeth reqHost req
-  let reqs    = (trigger ,xhrReq )
+--   let xhrReq  = reqToReflexRequestIO reqMeth reqHost req
+--   let reqs    = (trigger ,xhrReq )
 
-  -- resps <- performRequestsAsync okReqs
+--   -- resps <- performRequestsAsync okReqs
 
-  -- let x :: _ = newXMLHttpRequestWithError
+--   -- let x :: _ = newXMLHttpRequestWithError
 
-  -- return (resps, badReqs)
-  undefined
+--   -- return (resps, badReqs)
+--   undefined
 
-doThing :: (IsXhrPayload a, HasWebView IO) => XhrRequest a -> IO XhrResponse
-doThing req = do
-    v <- newEmptyMVar
-    newXMLHttpRequest req $ putMVar v
-    takeMVar v
+-- doThing :: (IsXhrPayload a, MonadJSM m, HasJSContext m) => XhrRequest a -> m XhrResponse
+-- doThing req = do
+--     v <- liftIO newEmptyMVar
+--     r <- newXMLHttpRequest req (liftIO . putMVar v)
+--     liftIO $ takeMVar v
 
 
 type XhrPayload = T.Text
@@ -510,23 +539,23 @@ performRequestsCTIO
       MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
-    -> Dynamic t (f (Req t))
-    -> Dynamic t BaseUrl
-    -> Event t tag
-    -> m (Event t (f (ReqResult tag a)))
-performRequestsCTIO ct reqMeth reqs reqHost trigger = do
-    resps <- performRequests reqMeth reqs reqHost trigger
+    -> Event t (f ReqIO)
+    -> BaseUrl
+    -> m (Event t (f (Either Text a)))
+performRequestsCTIO ct reqMeth reqs reqHost = do
+    resps <- performRequestsIO reqMeth reqs reqHost
     let decodeResp x = first T.pack .
                        mimeUnrender ct .
                        BL.fromStrict .
                        TE.encodeUtf8 =<< note "No body text"
                        (_xhrResponse_responseText x)
-    return $ fmap
-        (\(t,rs) -> ffor rs $ \r -> case r of
-                Left e  -> RequestFailure t e
-                Right g -> evalResponse decodeResp (t,g)
-        )
-        resps
+    return $ fmap (fmap decodeResp) resps
+    -- return $ fmap
+    --     (\(t,rs) -> ffor rs $ \r -> case r of
+    --             Left e  -> RequestFailure t e
+    --             Right g -> evalResponse decodeResp (t,g)
+    --     )
+    --     resps
 
 
 performRequestsNoBody
@@ -563,6 +592,25 @@ evalResponse decode (tag, xhr) =
                           (decode xhr)
                      else ResponseFailure tag errMsg xhr
     in respPayld
+
+-- ------------------------------------------------------------------------------
+-- evalResponseIO
+--     :: (XhrResponse -> Either Text a)
+--     -> (XhrResponse)
+--     -> ReqResult tag a
+-- evalResponseIO decode (tag, xhr) =
+--     let okStatus   = _xhrResponse_status xhr < 400
+--         errMsg = fromMaybe
+--             ("Empty response with error code " <>
+--                 T.pack (show $ _xhrResponse_status xhr))
+--             (_xhrResponse_responseText xhr)
+--         respPayld  = if okStatus
+--                      then either
+--                           (\e -> ResponseFailure tag e xhr)
+--                           (\v -> ResponseSuccess tag v xhr)
+--                           (decode xhr)
+--                      else ResponseFailure tag errMsg xhr
+--     in respPayld
 
 
 

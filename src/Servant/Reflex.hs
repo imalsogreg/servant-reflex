@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs                  #-}
 {-# LANGUAGE InstanceSigs           #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE OverloadedStrings      #-}
@@ -38,7 +39,7 @@ import qualified Data.Set               as Set
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Text.Encoding     as E
-import           GHC.TypeLits           (KnownSymbol, symbolVal)
+import           GHC.TypeLits
 import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
                                          BasicAuthData, BuildHeadersTo (..),
                                          Capture, Header, Headers (..),
@@ -60,12 +61,13 @@ import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
                                          SupportsServantReflex, baseUrlWidget,
                                          showBaseUrl)
 import           Servant.Common.Req     (QParam (..), QueryPart (..), Req,
-                                         ReqIO, ReqResult (..), addHeader,
+                                         ReqIO(..), ReqResult (..), addHeader, addHeaderIO,
                                          authData, defReq, evalResponse,
                                          performRequestsCT,
+                                         performRequestsCTIO,
                                          performRequestsNoBody,
                                          performSomeRequestsAsync,
-                                         prependToPathParts, qParamToQueryPart,
+                                         prependToPathParts, prependToPathPartsIO, qParamToQueryPart,
                                          qParams, reqBody, reqFailure,
                                          reqMethod, reqSuccess, reqTag,
                                          respHeaders, response)
@@ -97,6 +99,7 @@ client p q t = clientWithRoute p q t defReq
 class HasClient t m layout (tag :: *) | m -> t where
   type Client t m layout tag :: *
   type ClientIO m layout tag :: *
+  type Inp m layout tag :: k
   clientWithRoute
     :: Proxy layout
     -> Proxy m
@@ -112,8 +115,32 @@ class HasClient t m layout (tag :: *) | m -> t where
     -> BaseUrl
     -> ClientIO m layout tag
 
+data HList :: [*] -> * where
+    HNil :: HList '[]
+    HCons :: a -> HList xs -> HList (a ': xs)
+
+
+type family ToTuple xs :: *
+
+type instance ToTuple (HList '[]) = ()
+type instance ToTuple (HList (a ': '[])) = a
+type instance ToTuple (HList (a ': b ': '[])) = (a,b)
+type instance ToTuple (HList (a ': b ': c ': '[])) = (a,b,c)
+type instance ToTuple (HList (a ': b ': c ': d ': '[])) = (a,b,c,d)
+type instance ToTuple (HList (a ': b ': c ': d ': e ': '[])) = (a,b,c,d,e)
+type instance ToTuple (HList (a ': b ': c ': d ': e ': f ': '[])) = (a,b,c,d,e,f)
+
+type instance ToTuple (a :> ()) = a
+type instance ToTuple (a :> b :> ()) = (a,b)
+type instance ToTuple (a :> b :> c :> ()) = (a,b,c)
+type instance ToTuple (a :> b :> c :> d :> ()) = (a,b,c,d)
+type instance ToTuple (a :> b :> c :> d :> e :> ()) = (a,b,c,d,e)
+type instance ToTuple (a :> b :> c :> d :> e :> f :> ()) = (a,b,c,d,e,f)
+
+
 instance (HasClient t m a tag, HasClient t m b tag) => HasClient t m (a :<|> b) tag where
   type Client t m (a :<|> b) tag = Client t m a tag :<|> Client t m b tag
+  type Inp m (a :<|> b) tag = Inp m a tag :<|> Inp m b tag
   type ClientIO m (a :<|> b) tag = ClientIO m a tag :<|> ClientIO m b tag
 
   clientWithRoute Proxy q pTag req baseurl =
@@ -143,8 +170,11 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
   type Client t m (Capture capture a :> sublayout) tag =
     Dynamic t (Either Text a) -> Client t m sublayout tag
 
-  type ClientIO m (Capture capture a :> sublayout) tag =
-      a -> ClientIO m sublayout tag
+  -- type ClientIO m (Capture capture a :> sublayout) tag =
+  --     ToTuple (Inp m (Capture capture a :> sublayout) -> ClientIO m sublayout tag
+
+  -- type Inp m (Capture capture a :> sublayout) tag =
+  --     a :> Inp m sublayout tag
 
   clientWithRoute Proxy q t req baseurl val =
     clientWithRoute (Proxy :: Proxy sublayout)
@@ -153,12 +183,13 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
                     baseurl
     where p = (fmap . fmap) toUrlPiece val
 
-  clientWithRouteIO Proxy q t req baseurl val =
-    clientWithRouteIO (Proxy :: Proxy sublayout)
-                      q t
-                      (prependToPathParts p req)
-                      baseurl
-    where p = (fmap . fmap) toUrlPiece val
+  -- clientWithRouteIO Proxy q t req baseurl val =
+  --   clientWithRouteIO (Proxy :: Proxy sublayout)
+  --                     q t
+  --                     req
+  --                     -- (prependToPathPartsIO p req)
+  --                     baseurl
+  --   where p = toUrlPiece val
 
 
 -- VERB (Returning content) --
@@ -181,11 +212,10 @@ instance {-# OVERLAPPABLE #-}
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
-  clientWithRouteIO Proxy _ _ req baseurl tag =
-    -- performRequestCT (Proxy :: Proxy ct) method req' baseurl trigs
-      fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl tag
-      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-            req' = req { reqMethod = method }
+  -- clientWithRouteIO Proxy _ _ req baseurl tag =
+  --     performRequestsCTIO (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl tag
+  --     where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+  --           req' = req { reqMethodIO = method }
 
 
 -- -- VERB (No content) --
@@ -285,6 +315,13 @@ instance (KnownSymbol sym, ToHttpApiData a,
                     (Servant.Common.Req.addHeader hname eVal req)
                     baseurl
     where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
+
+  -- clientWithRouteIO Proxy q t req baseurl eVal =
+  --   clientWithRouteIO (Proxy :: Proxy sublayout)
+  --                   q t
+  --                   (Servant.Common.Req.addHeaderIO hname eVal req)
+  --                   baseurl
+  --   where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
 
 
 

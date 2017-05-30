@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.3
+Version: 0.3.1
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: AllRightsReserved
@@ -19,6 +19,7 @@ library
   exposed-modules:
     Servant.Reflex
     Servant.Reflex.Multi
+    Servant.Reflex.Tuple
 
   other-modules:
     Servant.Common.BaseUrl
@@ -32,9 +33,10 @@ library
     containers          >= 0.5.6   && < 0.6,
     data-default        >= 0.5  && < 0.8,
     exceptions          >= 0.8  && < 0.9,
-    ghcjs-dom           >= 0.2  && < 0.3,
+    ghcjs-dom           >= 0.2  && < 0.10,
     http-api-data       >= 0.2  && < 0.4,
     http-media          >= 0.6  && < 0.7,
+    jsaddle             >= 0.8  && < 0.10,
     mtl                 >= 2.2.1 && < 2.3,
     network-uri         >= 2.6  && < 2.7,
     reflex              >= 0.5  && < 0.6,
@@ -58,4 +60,5 @@ executable example
   default-language: Haskell2010
   main-is: Example.hs
   other-modules: API
+                 TupleExample
   hs-source-dirs: exec

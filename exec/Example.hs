@@ -19,10 +19,11 @@ import Servant.API
 import API
 import Data.Proxy
 import Text.Read (readMaybe)
-import Reflex.Dom
+import Reflex.Dom hiding (run)
 ------------------------------------------------------------------------------
 import Servant.Reflex
 import Servant.Reflex.Multi
+import qualified TupleExample
 
 
 api :: Proxy API
@@ -33,6 +34,7 @@ main = mainWidget $ do
     el "h1" $ text "Wowzers!"
     divClass "example-base" run
     divClass "example-multi" runMulti
+    divClass "example-tuple" TupleExample.run
 
 
 runMulti :: forall t m. (SupportsServantReflex t m,

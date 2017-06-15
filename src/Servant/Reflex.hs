@@ -34,6 +34,7 @@ module Servant.Reflex
   ) where
 
 ------------------------------------------------------------------------------
+import Data.Aeson
 import           Control.Applicative
 import           Data.Monoid             ((<>))
 import qualified Data.Set                as Set
@@ -128,7 +129,7 @@ instance (HasClient t m a tag, HasClient t m b tag) => HasClient t m (a :<|> b) 
 --           -> m (Event t (l, ReqResult Book))
 -- > getBook = client myApi (constDyn host)
 
-instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout tag)
+instance (SupportsServantReflex t m, FromJSON a, ToHttpApiData a, HasClient t m sublayout tag)
       => HasClient t m (Capture capture a :> sublayout) tag where
 
   type Client t m (Capture capture a :> sublayout) tag =
@@ -145,7 +146,7 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
-  (MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), SupportsServantReflex t m
+  (FromJSON a, MimeUnrender ct a, ReflectMethod method, cts' ~ (ct ': cts), SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' a) tag where
   type Client t m (Verb method status cts' a) tag =
     Event t tag -> m (Event t (ReqResult tag a))
@@ -198,6 +199,7 @@ instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
+    FromJSON a,
     ReflectMethod method, cts' ~ (ct ': cts),
     SupportsServantReflex t m
   ) => HasClient t m (Verb method status cts' (Headers ls a)) tag where

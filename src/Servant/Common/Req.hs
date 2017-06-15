@@ -14,6 +14,7 @@ import           Control.Concurrent
 import           Control.Applicative        (liftA2, liftA3)
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Data.Aeson
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
@@ -26,6 +27,8 @@ import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
+import qualified Language.Javascript.JSaddle as JS
+import           Language.Javascript.JSaddle.Types (JSVal)
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
@@ -347,23 +350,29 @@ bytesToPayload = TE.decodeUtf8 . BL.toStrict
 --                     , fmap (uncurry RequestFailure) badReq
 --                     ]
 
-
 performRequestsCT
-    :: (SupportsServantReflex t m,
-        MimeUnrender ct a, Traversable f)
+    :: ( SupportsServantReflex t m
+       -- , MimeUnrender ct a
+       , FromJSON a
+       , Traversable f
+       )
     => Proxy ct
     -> Text
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> Event t tag
     -> m (Event t (f (ReqResult tag a)))
-performRequestsCT ct reqMeth reqs reqHost trigger = do
+performRequestsCT _ reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
-  let decodeResp x = first T.pack .
-                     mimeUnrender ct .
-                     BL.fromStrict .
-                     TE.encodeUtf8 =<< note "No body text"
-                     (_xhrResponse_responseText x)
+  -- let decodeResp x = first T.pack .
+  --                    mimeUnrender ct .
+  --                    BL.fromStrict .
+  --                    TE.encodeUtf8 =<< note "No body text"
+  let decodeResp x = first T.pack
+                   . note "Failed to decode"
+                   . jsonDecode
+                   . JS.textToJSString
+                   =<< note "No body text" (_xhrResponse_responseText x)
   return $ fmap
       (\(t,rs) -> ffor rs $ \r -> case r of
               Left e  -> RequestFailure t e
@@ -393,7 +402,7 @@ evalResponse
     :: (XhrResponse -> Either Text a)
     -> (tag, XhrResponse)
     -> ReqResult tag a
-evalResponse decode (tag, xhr) =
+evalResponse decodeRes (tag, xhr) =
     let okStatus   = _xhrResponse_status xhr < 400
         errMsg = fromMaybe
             ("Empty response with error code " <>
@@ -403,7 +412,7 @@ evalResponse decode (tag, xhr) =
                      then either
                           (\e -> ResponseFailure tag e xhr)
                           (\v -> ResponseSuccess tag v xhr)
-                          (decode xhr)
+                          (decodeRes xhr)
                      else ResponseFailure tag errMsg xhr
     in respPayld
 

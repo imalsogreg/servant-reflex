@@ -34,6 +34,7 @@ module Servant.Reflex.Multi (
     ) where
 
 ------------------------------------------------------------------------------
+import           Data.Aeson
 import           Control.Applicative    (liftA2)
 import           Data.Functor.Compose   (Compose (..), getCompose)
 import           Data.Proxy             (Proxy (..))
@@ -119,6 +120,7 @@ instance (SupportsServantReflex t m,
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   (MimeUnrender ct a,
+   FromJSON a,
    ReflectMethod method, cts' ~ (ct ': cts),
    SupportsServantReflex t m,
    Applicative f,
@@ -152,6 +154,7 @@ instance {-# OVERLAPPING #-}
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
+    FromJSON a,
     ReflectMethod method, cts' ~ (ct ': cts),
     SupportsServantReflex t m,
     Traversable f

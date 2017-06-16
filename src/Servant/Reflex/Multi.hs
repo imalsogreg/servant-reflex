@@ -34,7 +34,6 @@ module Servant.Reflex.Multi (
     ) where
 
 ------------------------------------------------------------------------------
-import           Data.Aeson
 import           Control.Applicative    (liftA2)
 import           Data.Functor.Compose   (Compose (..), getCompose)
 import           Data.Proxy             (Proxy (..))
@@ -47,7 +46,7 @@ import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
                                          BasicAuthData, BuildHeadersTo (..),
                                          Capture, Header, Headers (..),
                                          HttpVersion, IsSecure, MimeRender (..),
-                                         MimeUnrender, NoContent, QueryFlag,
+                                         NoContent, QueryFlag,
                                          QueryParam, QueryParams, Raw,
                                          ReflectMethod (..), RemoteHost,
                                          ReqBody, ToHttpApiData (..), Vault,
@@ -61,6 +60,7 @@ import           Reflex.Dom             (Dynamic, Event, Reflex,
 import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
                                          SupportsServantReflex)
 import           Servant.Common.Req     (QParam (..), QueryPart (..), Req,
+                                         MimeUnrender,
                                          ReqResult (..), addHeader, authData,
                                          defReq, performRequestsCT,
                                          performRequestsNoBody,
@@ -120,7 +120,6 @@ instance (SupportsServantReflex t m,
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   (MimeUnrender ct a,
-   FromJSON a,
    ReflectMethod method, cts' ~ (ct ': cts),
    SupportsServantReflex t m,
    Applicative f,
@@ -154,7 +153,6 @@ instance {-# OVERLAPPING #-}
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]
   ( MimeUnrender ct a, BuildHeadersTo ls, BuildHeaderKeysTo ls,
-    FromJSON a,
     ReflectMethod method, cts' ~ (ct ': cts),
     SupportsServantReflex t m,
     Traversable f

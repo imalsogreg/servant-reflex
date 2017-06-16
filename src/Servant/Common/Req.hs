@@ -7,6 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances     #-}
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
@@ -16,6 +18,9 @@ import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Bifunctor             (first)
+import qualified Data.ByteString.Builder    as BB
+import qualified Data.ByteString            as BS
+import           Data.ByteString.Lazy       (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes, fromMaybe)
@@ -24,18 +29,23 @@ import           Data.Monoid                ((<>))
 import           Data.Proxy                 (Proxy(..))
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
+import qualified Data.Text.Lazy             as TL
+import qualified Data.Text.Encoding         as T
 import           Data.Traversable           (forM)
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
 import qualified Language.Javascript.JSaddle as JS
-import           Language.Javascript.JSaddle.Types (JSVal)
+import qualified Data.JSString.Text         as JS (lazyTextFromJSString)
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
-import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
+import           Servant.API.ContentTypes   ( NoContent(..), Accept, JSON
+                                            , OctetStream, PlainText
+                                            , FormUrlEncoded)
 import           Web.HttpApiData            (ToHttpApiData(..))
+import           Web.FormUrlEncoded         (FromForm, urlDecodeAsForm)
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
+-------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------
@@ -133,7 +143,7 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
+addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . toHeader) val) : headers req }
 
 
 reqToReflexRequest
@@ -224,8 +234,8 @@ reqToReflexRequest reqMeth reqHost req =
       mkAuth _ (Left e) = Left e
       mkAuth Nothing r  = r
       mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
-        { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
-        , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
+        { _xhrRequestConfig_user     = Just $ T.decodeUtf8 u
+        , _xhrRequestConfig_password = Just $ T.decodeUtf8 p}
 
       addAuth :: Dynamic t (Either Text (XhrRequestConfig x))
               -> Dynamic t (Either Text (XhrRequestConfig x))
@@ -313,7 +323,7 @@ performRequest reqMeth req reqHost trigger = do
 
 type XhrPayload = T.Text
 bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = TE.decodeUtf8 . BL.toStrict
+bytesToPayload = T.decodeUtf8 . BL.toStrict
 
 
 -- performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
@@ -351,26 +361,18 @@ bytesToPayload = TE.decodeUtf8 . BL.toStrict
 --                     ]
 
 performRequestsCT
-    :: ( SupportsServantReflex t m
-       -- , MimeUnrender ct a
-       , FromJSON a
-       , Traversable f
-       )
+    :: (SupportsServantReflex t m,
+        MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> Event t tag
     -> m (Event t (f (ReqResult tag a)))
-performRequestsCT _ reqMeth reqs reqHost trigger = do
+performRequestsCT ct reqMeth reqs reqHost trigger = do
   resps <- performRequests reqMeth reqs reqHost trigger
-  -- let decodeResp x = first T.pack .
-  --                    mimeUnrender ct .
-  --                    BL.fromStrict .
-  --                    TE.encodeUtf8 =<< note "No body text"
   let decodeResp x = first T.pack
-                   . note "Failed to decode"
-                   . jsonDecode
+                   . mimeUnrender ct
                    . JS.textToJSString
                    =<< note "No body text" (_xhrResponse_responseText x)
   return $ fmap
@@ -422,6 +424,37 @@ evalResponse decodeRes (tag, xhr) =
 note :: e -> Maybe a -> Either e a
 note e = maybe (Left e) Right
 
-fmapL :: (e -> e') -> Either e a -> Either e' a
-fmapL _ (Right a) = Right a
-fmapL f (Left e)  = Left (f e)
+-- | Similar to 'Servant.API.ContentType.MimeUnrender' but with the differnce that
+-- the second argument expects a JSString instead of ByteString.
+-- This can lead to better performance ghcjs.
+class Accept contentType => MimeUnrender contentType a where
+  mimeUnrender :: Proxy contentType -> JS.JSString -> Either String a
+
+instance FromJSON a => MimeUnrender JSON a where
+  mimeUnrender _ = note "Failed to decode response" . jsonDecode
+
+-- | @urlDecodeAsForm@
+-- Note that the @mimeUnrender p (mimeRender p x) == Right x@ law only
+-- holds if every element of x is non-null (i.e., not @("", "")@)
+instance FromForm a => MimeUnrender FormUrlEncoded a where
+    mimeUnrender _ = first T.unpack . urlDecodeAsForm . BB.toLazyByteString . T.encodeUtf8Builder . JS.textFromJSString
+
+-- | @left show . TextL.decodeUtf8'@
+instance MimeUnrender PlainText TL.Text where
+    mimeUnrender _ = pure . JS.lazyTextFromJSString
+
+-- | @left show . TextS.decodeUtf8' . toStrict@
+instance MimeUnrender PlainText T.Text where
+    mimeUnrender _ = pure . JS.textFromJSString
+
+-- | @Right . BC.unpack@
+instance MimeUnrender PlainText String where
+    mimeUnrender _ = Right . T.unpack . JS.textFromJSString
+
+-- | @Right . id@
+instance MimeUnrender OctetStream ByteString where
+    mimeUnrender _ = pure . BB.toLazyByteString . T.encodeUtf8Builder . JS.textFromJSString
+
+-- | @Right . toStrict@
+instance MimeUnrender OctetStream BS.ByteString where
+    mimeUnrender _ = pure . T.encodeUtf8 . JS.textFromJSString

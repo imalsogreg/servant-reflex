@@ -1,24 +1,22 @@
-{-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+#if MIN_VERSION_base(4,9,0)
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+#endif
 
 -- #include "overlapping-compat.h"
 -- | This module provides 'client' which can automatically generate
@@ -44,6 +42,7 @@ import           Data.Proxy              (Proxy (..))
 import qualified Data.Map                as Map
 import           Data.Text               (Text)
 import qualified Data.Text               as T
+import           GHC.Exts                (Constraint)
 import           GHC.TypeLits            (KnownSymbol, symbolVal)
 import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
                                           BasicAuthData, BuildHeadersTo(..),
@@ -54,6 +53,7 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
                                           QueryParams, Raw, ReflectMethod(..),
                                           RemoteHost, ReqBody,
                                           ToHttpApiData(..), Vault, Verb)
+import qualified Servant.Auth            as Auth
 
 import           Reflex.Dom              (Dynamic, Event, Reflex,
                                           XhrRequest(..),
@@ -524,3 +524,30 @@ non-empty lists, but is otherwise more specific, no instance will be overall
 more specific. This in turn generally means adding yet another instance (one
 for empty and one for non-empty lists).
 -}
+
+
+-- SUPPORT FOR servant-auth --
+
+-- For JavaScript clients we should be sending/storing JSON web tokens in a
+-- way that is inaccessible to JavaScript.
+--
+-- For @servant-auth@ this is done with HTTP-only cookies. In a Reflex-DOM
+-- app this means the @servant-auth@ client should only verify that the API
+-- supports Cookie-based authentication but do nothing with the token
+-- directly.
+
+-- @HasCookieAuth auths@ is nominally a redundant constraint, but ensures
+-- we're not trying to rely on cookies when the API does not use them.
+instance (HasCookieAuth auths, HasClient t m api tag) => HasClient t m (Auth.Auth auths a :> api) tag where
+
+  type Client t m (Auth.Auth auths a :> api) tag = Client t m api tag
+  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy api)
+
+
+type family HasCookieAuth xs :: Constraint where
+  HasCookieAuth (Auth.Cookie ': xs) = ()
+  HasCookieAuth (x ': xs)   = HasCookieAuth xs
+  HasCookieAuth '[]         = CookieAuthNotEnabled
+
+class CookieAuthNotEnabled
+

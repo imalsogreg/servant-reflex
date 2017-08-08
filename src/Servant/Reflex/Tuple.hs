@@ -144,9 +144,14 @@ instance {-# OVERLAPPABLE #-}
     ) => HasInp (Verb method status cts' (Headers ls a)) where
     type Inp (Verb method status cts' (Headers ls a)) = ()
     type Out (Verb method status cts' (Headers ls a)) = Either Text (Headers ls a)
-    inpToReq _ _ = defReqIO { respHeadersIO = OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))}
+    inpToReq _ _ = defReqIO { respHeadersIO =
+                              OnlyHeaders (Set.fromList
+                                           (buildHeaderKeysTo
+                                            (Proxy :: Proxy ls)))
+                            }
 
 
+------------------------------------------------------------------------------
 instance {-# OVERLAPPABLE #-}
     HasInp (Verb method status cts' (Headers ls a))
     => HasClient (Verb method status cts' (Headers ls a)) t m where
@@ -154,47 +159,87 @@ instance {-# OVERLAPPABLE #-}
         Event t (ToTuple (Inp (Verb method status cts' (Headers ls a)))) ->
         m (Event t (Out (Verb method status cts' (Headers ls a))))
 
+
+------------------------------------------------------------------------------
 instance {-# OVERLAPPING #-}
     (BuildHeadersTo ls,
-     BuildHeaderKeysTo ls) => HasInp (Verb method status cts' (Headers ls NoContent)) where
+     BuildHeaderKeysTo ls
+    ) => HasInp (Verb method status cts' (Headers ls NoContent)) where
     type Inp (Verb method status cts' (Headers ls NoContent)) = ()
-    type Out (Verb method status cts' (Headers ls NoContent)) = Either Text (Headers ls NoContent)
-    inpToReq _ _ = defReqIO { respHeadersIO = OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))}
+    type Out (Verb method status cts' (Headers ls NoContent)) =
+         Either Text (Headers ls NoContent)
+    inpToReq _ _ = defReqIO { respHeadersIO =
+                              OnlyHeaders (Set.fromList
+                                           (buildHeaderKeysTo
+                                               (Proxy :: Proxy ls)))
+                            }
 
+
+------------------------------------------------------------------------------
 instance {-# OVERLAPPING #-}
     (BuildHeadersTo ls,
      BuildHeaderKeysTo ls,
-     SupportsServantReflex t m) => HasClient (Verb method status cts' (Headers ls NoContent)) t m where
+     SupportsServantReflex t m
+    ) => HasClient (Verb method status cts' (Headers ls NoContent)) t m where
     type Client (Verb method status cts' (Headers ls NoContent)) t m =
         Event t (ToTuple (Inp (Verb method status cts' (Headers ls NoContent)))) ->
         m (Event t (Out (Verb method status cts' (Headers ls NoContent))))
 
 
-toHeaders :: BuildHeadersTo ls => ReqResult tag a -> ReqResult tag (Headers ls a)
+------------------------------------------------------------------------------
+toHeaders
+    :: BuildHeadersTo ls
+    => ReqResult tag a
+    -> ReqResult tag (Headers ls a)
 toHeaders r =
   let toBS = E.encodeUtf8
       hdrs = maybe []
                    (\xhr -> fmap (\(h,v) -> (mk (toBS h), toBS v))
                      (Map.toList $ _xhrResponse_headers xhr))
                    (response r)
-  in  ffor r $ \a -> Headers {getResponse = a ,getHeadersHList = buildHeadersTo hdrs}
+  in  ffor r $ \a -> Headers {getResponse = a
+                             ,getHeadersHList = buildHeadersTo hdrs
+                             }
 
+
+------------------------------------------------------------------------------
 class BuildHeaderKeysTo hs where
   buildHeaderKeysTo :: Proxy hs -> [T.Text]
 
+
+------------------------------------------------------------------------------
 instance {-# OVERLAPPABLE #-} BuildHeaderKeysTo '[]
   where buildHeaderKeysTo _ = []
 
+
+------------------------------------------------------------------------------
 instance {-# OVERLAPPABLE #-} (BuildHeaderKeysTo xs, KnownSymbol h)
   => BuildHeaderKeysTo ((Header h v) ': xs) where
-  buildHeaderKeysTo _ = T.pack (symbolVal (Proxy :: Proxy h)) : buildHeaderKeysTo (Proxy :: Proxy xs)
+  buildHeaderKeysTo _ =
+      T.pack (symbolVal (Proxy :: Proxy h)) :
+      buildHeaderKeysTo (Proxy :: Proxy xs)
 
 
-instance (KnownSymbol sym, ToHttpApiData a, HasInp sublayout) => HasInp (Header sym a :> sublayout) where
+------------------------------------------------------------------------------
+instance (KnownSymbol sym,
+          ToHttpApiData a,
+          HasInp sublayout
+         ) => HasInp (Header sym a :> sublayout) where
     type Inp (Header sym a :> sublayout) = (Maybe a, Inp sublayout)
     type Out (Header sym a :> sublayout) = Out sublayout
-    inpToReq _ (h, vs) = (addHeaderIO hname h) (inpToReq (Proxy :: Proxy sublayout) vs)
+    inpToReq _ (h, vs) =
+        (addHeaderIO hname h) (inpToReq (Proxy :: Proxy sublayout) vs)
       where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
 
-instance (KnownSymbol sym, ToHttpApiData a, HasClient sublayout t m) => HasClient (Header sym a :> sublayout) t m where
-    type Client (Header sym a :> sublayout) t m = Event t (ToTuple (Inp (Header sym a :> sublayout))) -> m (Event t (Out (Header sym a :> sublayout)))
+
+------------------------------------------------------------------------------
+instance (KnownSymbol sym,
+          ToHttpApiData a,
+          HasClient sublayout t m
+         ) => HasClient (Header sym a :> sublayout) t m where
+    type Client (Header sym a :> sublayout) t m =
+             Event t (ToTuple (Inp (Header sym a :> sublayout)))
+             -> m (Event t (Out (Header sym a :> sublayout)))
+
+
+------------------------------------------------------------------------------

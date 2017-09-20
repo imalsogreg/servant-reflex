@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 
@@ -47,8 +48,10 @@ data App = App
 -- that represents the API, are glued together using :<|>.
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
-server :: Server API (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> serveDirectory "static"
+server :: Server API '[BasicAuthCheck (Handler App App) ()] (Handler App App)
+server = return () :<|> return 100 :<|> sayhi :<|> dbl
+    :<|> multi :<|> qna :<|> serveSecret
+    :<|> serveDirectory "static"
   where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
         sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: Text)
@@ -69,11 +72,16 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> 
             putStrLn $ "qna got: " ++ show q
             T.putStrLn $ unQuestion q
           return $ Answer $ unQuestion q
+        serveSecret _ = do
+          req <- getRequest
+          liftIO $ putStrLn (show req)
+          return 101
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.
 test :: Handler App App ()
-test = serveSnap testApi server
+test = serveSnapWithContext testApi
+       (BasicAuthCheck (\_ -> return @(Handler App App) (Authorized ())) :. EmptyContext) server
 
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do

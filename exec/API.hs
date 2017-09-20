@@ -40,6 +40,7 @@ type API = "getunit" :> Get '[JSON] ()
       :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] Text
       :<|> "qna" :> ReqBody '[JSON] Question
                  :> Post '[JSON] Answer
+      :<|> "secret" :> BasicAuth "realm" () :> Get '[JSON] Int
       :<|> Raw
 
 type GET = Get '[JSON] ()

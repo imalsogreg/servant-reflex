@@ -138,7 +138,7 @@ data Req t = Req
   }
 
 defReq :: Req t
-defReq = Req "GET" [] [] Nothing [] def Nothing -- False (\_ -> return ())
+defReq = Req "GET" [] [] Nothing [] def Nothing
 
 prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
@@ -229,7 +229,7 @@ reqToReflexRequest reqMeth reqHost opts req =
                                                        , _xhrRequestConfig_password = Nothing
                                                        , _xhrRequestConfig_responseType = Nothing
                                                        , _xhrRequestConfig_sendData = ""
-                                                       , _xhrRequestConfig_withCredentials = False
+                                                       , _xhrRequestConfig_withCredentials = optsWithCredentials opts
                                                        }
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 

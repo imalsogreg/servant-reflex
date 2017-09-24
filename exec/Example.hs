@@ -98,7 +98,12 @@ run = mdo
   -- Name the computed API client functions
   let (getUnit :<|> getInt :<|> sayhi :<|> dbl
        :<|> multi :<|> qna :<|> secret :<|> doRaw) =
-        client api (Proxy :: Proxy m) (Proxy :: Proxy Int) url
+        clientWithOpts api (Proxy :: Proxy m) (Proxy :: Proxy Int) url
+          (ClientOptions {
+                  optsWithCredentials = True
+                  , optsDebugRequests = \x -> putStrLn "Got a request!" >>
+                                        putStrLn (show x)
+                  })
 
       c2 = client (Proxy :: Proxy ComprehensiveAPI) (Proxy :: Proxy m) (Proxy :: Proxy ()) url -- Just make sure this compiles for now
 

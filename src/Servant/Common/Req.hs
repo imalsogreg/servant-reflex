@@ -25,7 +25,7 @@ import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
-import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
+import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
@@ -47,6 +47,18 @@ data ReqResult tag a
       -- ^ A failure to construct the request tagged with 'tag' at trigger time
   deriving (Functor)
 
+data ClientOptions = ClientOptions
+    { optsWithCredentials :: Bool
+      -- ^ Set withCredentials field of xhr requests
+    , optsDebugRequests   :: Either Text (XhrRequest XhrPayload) -> JSM ()
+      -- ^ JSM action to run on each triggered request
+    }
+
+defaultClientOptions :: ClientOptions
+defaultClientOptions = ClientOptions
+    { optsWithCredentials = False
+    , optsDebugRequests   = const (return ())
+    }
 
 ------------------------------------------------------------------------------
 -- | Simple filter/accessor for successful responses, when you want to
@@ -120,10 +132,13 @@ data Req t = Req
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
+  -- , reqWithCreds :: Bool
+    -- ^ set the withCredentials XHR flag
+  -- , debugReq     :: Either Text (XhrRequest XhrPayload) -> JSM ()
   }
 
 defReq :: Req t
-defReq = Req "GET" [] [] Nothing [] def Nothing
+defReq = Req "GET" [] [] Nothing [] def Nothing -- False (\_ -> return ())
 
 prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
@@ -137,9 +152,10 @@ reqToReflexRequest
     :: forall t. Reflex t
     => Text
     -> Dynamic t BaseUrl
+    -> ClientOptions
     -> Req t
-    -> (Dynamic t (Either Text (XhrRequest XhrPayload)))
-reqToReflexRequest reqMeth reqHost req =
+    -> Dynamic t (Either Text (XhrRequest XhrPayload))
+reqToReflexRequest reqMeth reqHost opts req =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -196,11 +212,11 @@ reqToReflexRequest reqMeth reqHost req =
                     Right $ XhrRequestConfig
                       { _xhrRequestConfig_sendData = bytesToPayload bBytes
                       , _xhrRequestConfig_headers  =
-                                    Map.insert "Content-Type" bCT (Map.fromList hs)
+                        Map.insert "Content-Type" bCT (Map.fromList hs)
                       , _xhrRequestConfig_user = Nothing
                       , _xhrRequestConfig_password = Nothing
                       , _xhrRequestConfig_responseType = Nothing
-                      , _xhrRequestConfig_withCredentials = False
+                      , _xhrRequestConfig_withCredentials = optsWithCredentials opts
                       , _xhrRequestConfig_responseHeaders = def
                       }
 
@@ -239,17 +255,26 @@ reqToReflexRequest reqMeth reqHost req =
 displayHttpRequest :: Text -> Text
 displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
--- | This function actually performs the request.
+-- | This function performs the request
 performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
                 => Text
                 -> Dynamic t (f (Req t))
                 -> Dynamic t BaseUrl
+                -> ClientOptions
                 -> Event t tag
                 -> m (Event t (tag, f (Either Text XhrResponse)))
-performRequests reqMeth rs reqHost trigger = do
-  -- let xhrReqs = sequence $ (\r -> reqToReflexRequest reqMeth r reqHost) <$> rs :: Dynamic t (f (Either Text (XhrRequest XhrPayload)))
-  let xhrReqs = join $ (\(fxhr :: f (Req t)) -> sequence $ reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
-  let reqs    = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
+performRequests reqMeth rs reqHost opts trigger = do
+  let xhrReqs =
+          join $ (\(fxhr :: f (Req t)) -> sequence $
+                     reqToReflexRequest reqMeth reqHost opts <$> fxhr) <$> rs
+
+      -- xhrReqs = fmap snd <$> xhrReqsAndDebugs
+      reqs    = attachPromptlyDynWith
+                (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
+
+  performEvent_ $ ffor (reqs) $
+      liftJSM . mapM_ (optsDebugRequests opts $)
+
   resps <- performSomeRequestsAsync reqs
   return $ getCompose <$> resps
 
@@ -289,63 +314,28 @@ performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb ->
 
 
 
--- | This function actually performs the request.
-performRequest :: forall t m tag .(SupportsServantReflex t m)
-               => Text
-               -> (Req t)
-               -> Dynamic t BaseUrl
-               -> Event t tag
-               -> m (Event t (tag, XhrResponse), Event t (tag, Text))
-performRequest reqMeth req reqHost trigger = do
+-- -- | This function performs the request
+-- performRequest :: forall t m tag .(SupportsServantReflex t m)
+--                => Text
+--                -> Req t
+--                -> Dynamic t BaseUrl
+--                -> Event t tag
+--                -> m (Event t (tag, XhrResponse), Event t (tag, Text))
+-- performRequest reqMeth req reqHost trigger = do
 
-  let xhrReq  = reqToReflexRequest reqMeth reqHost req
-  let reqs    = attachPromptlyDynWith (flip (,)) xhrReq trigger
-      okReqs  = fmapMaybe (\(t,e) -> either (const Nothing) (Just . (t,)) e) reqs
-      badReqs = fmapMaybe (\(t,e) -> either (Just . (t,)) (const Nothing) e) reqs
+--   let xhrReq  = reqToReflexRequest reqMeth reqHost req
+--   let reqs    = attachPromptlyDynWith (flip (,)) xhrReq trigger
+--       okReqs  = fmapMaybe (\(t,e) -> either (const Nothing) (Just . (t,)) (snd e)) reqs
+--       badReqs = fmapMaybe (\(t,e) -> either (Just . (t,)) (const Nothing) (snd e)) reqs
 
-  resps <- performRequestsAsync okReqs
+--   resps <- performRequestsAsync okReqs
 
-  return (resps, badReqs)
+--   return (resps, badReqs)
 
 
 type XhrPayload = T.Text
 bytesToPayload :: BL.ByteString -> XhrPayload
 bytesToPayload = TE.decodeUtf8 . BL.toStrict
-
-
--- performRequestNoBody :: forall t m tag.(SupportsServantReflex t m)
---                      => Text
---                      -> Req t
---                      -> Dynamic t BaseUrl
---                      -> Event t tag -> m (Event t (ReqResult tag NoContent))
--- performRequestNoBody reqMeth req reqHost trigger = do
---   (resp, badReq) <- performRequest reqMeth req reqHost trigger
---   let decodeResp = const $ Right NoContent
---   return $ leftmost [ fmap (evalResponse decodeResp) resp
---                     , fmap (uncurry RequestFailure) badReq
---                     ]
-
-
--- performRequestCT
---     :: (SupportsServantReflex t m,
---         MimeUnrender ct a)
---     => Proxy ct
---     -> Text
---     -> Req t
---     -> Dynamic t BaseUrl
---     -> Event t tag
---     -> m (Event t (ReqResult tag a))
--- performRequestCT ct reqMeth req reqHost trigger = do
---   (resp, badReq) <- performRequest reqMeth req reqHost trigger
---   let decodeResp x = first T.pack .
---                      mimeUnrender ct .
---                      BL.fromStrict .
---                      TE.encodeUtf8 =<< note "No body text"
---                      (_xhrResponse_responseText x)
-
---   return $ leftmost [fmap (evalResponse decodeResp) resp
---                     , fmap (uncurry RequestFailure) badReq
---                     ]
 
 
 performRequestsCT
@@ -355,10 +345,11 @@ performRequestsCT
     -> Text
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
+    -> ClientOptions
     -> Event t tag
     -> m (Event t (f (ReqResult tag a)))
-performRequestsCT ct reqMeth reqs reqHost trigger = do
-  resps <- performRequests reqMeth reqs reqHost trigger
+performRequestsCT ct reqMeth reqs reqHost opts trigger = do
+  resps <- performRequests reqMeth reqs reqHost opts trigger
   let decodeResp x = first T.pack .
                      mimeUnrender ct .
                      BL.fromStrict .
@@ -378,10 +369,11 @@ performRequestsNoBody
     => Text
     -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
+    -> ClientOptions
     -> Event t tag
     -> m (Event t (f (ReqResult tag NoContent)))
-performRequestsNoBody reqMeth reqs reqHost trigger = do
-  resps <- performRequests reqMeth reqs reqHost trigger
+performRequestsNoBody reqMeth reqs reqHost opts trigger = do
+  resps <- performRequests reqMeth reqs reqHost opts trigger
   let decodeResp = const $ Right NoContent
   return $ ffor resps $ \(tag,rs) -> ffor rs $ \r -> case r of
       Left e  -> RequestFailure tag e
@@ -406,8 +398,6 @@ evalResponse decode (tag, xhr) =
                           (decode xhr)
                      else ResponseFailure tag errMsg xhr
     in respPayld
-
-
 
 
 note :: e -> Maybe a -> Either e a

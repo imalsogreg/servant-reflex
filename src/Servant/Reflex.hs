@@ -30,6 +30,7 @@ module Servant.Reflex
   , toHeaders
   , HasClient
   , Client
+  , withCredentials
   , module Servant.Common.Req
   , module Servant.Common.BaseUrl
   ) where
@@ -83,7 +84,7 @@ import           Servant.Common.Req      (ClientOptions(..),
                                           reqMethod, respHeaders,
                                           response,
                                           reqTag,
-                                          qParams)
+                                          qParams, withCredentials)
 
 
 -- * Accessing APIs as a Client

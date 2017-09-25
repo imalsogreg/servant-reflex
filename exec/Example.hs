@@ -96,14 +96,12 @@ run = mdo
   el "br" (return ())
 
   -- Name the computed API client functions
+  let tweakRequest = ClientOptions $ \r -> do
+          putStrLn ("Got req: " ++ show r)
+          return $ r & withCredentials .~ True
   let (getUnit :<|> getInt :<|> sayhi :<|> dbl
        :<|> multi :<|> qna :<|> secret :<|> doRaw) =
-        clientWithOpts api (Proxy :: Proxy m) (Proxy :: Proxy Int) url
-          (ClientOptions {
-                  optsWithCredentials = True
-                  , optsDebugRequests = \x -> putStrLn "Got a request!" >>
-                                        putStrLn (show x)
-                  })
+        clientWithOpts api (Proxy :: Proxy m) (Proxy :: Proxy Int) url tweakRequest
 
       c2 = client (Proxy :: Proxy ComprehensiveAPI) (Proxy :: Proxy m) (Proxy :: Proxy ()) url -- Just make sure this compiles for now
 

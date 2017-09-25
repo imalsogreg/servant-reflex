@@ -24,6 +24,9 @@ module Servant.Reflex.Multi (
     , QParam(..)
 
     -- * Access response data
+    , withCredentials
+
+    -- * Access response data
     , ReqResult(..)
     , reqSuccess
     , reqSuccess'
@@ -70,7 +73,7 @@ import           Servant.Common.Req     (ClientOptions,
                                          prependToPathParts, qParamToQueryPart,
                                          qParams, reqBody, reqFailure,
                                          reqMethod, reqSuccess, reqSuccess',
-                                         respHeaders, response)
+                                         respHeaders, response, withCredentials)
 import           Servant.Reflex         (BuildHeaderKeysTo (..), toHeaders)
 
 

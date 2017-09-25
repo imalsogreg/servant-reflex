@@ -307,10 +307,10 @@ instance (SupportsServantReflex t m,
                                  -> Event t tag
                                  -> m (Event t (f (ReqResult tag ())))
 
-  clientWithRouteMulti _ _ _ _ _ _ _ rawReqs triggers = do
+  clientWithRouteMulti _ _ _ _ _ _ opts rawReqs triggers = do
     let rawReqs' = sequence rawReqs :: Dynamic t (f (Either Text (XhrRequest ())))
         rawReqs'' = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) rawReqs' triggers
-    resps <- fmap (fmap aux . sequenceA . getCompose) <$> performSomeRequestsAsync rawReqs''
+    resps <- fmap (fmap aux . sequenceA . getCompose) <$> performSomeRequestsAsync opts rawReqs''
     return resps
     where
       aux (tag, Right r) = ResponseSuccess tag () r

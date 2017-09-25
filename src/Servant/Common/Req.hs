@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
@@ -50,6 +51,11 @@ data ReqResult tag a
 data ClientOptions = ClientOptions
     { optsWithCredentials :: Bool
       -- ^ Set withCredentials field of xhr requests
+    , optsRequestFixup :: forall a.XhrRequest a -> IO (XhrRequest a)
+      -- ^ Aribtrarily modify requests just before they are sent.
+      -- Warning: This escape hatch opens the possibility for your
+      -- requests to diverge from what the server expects, when the
+      -- server is also derived from a servant API
     , optsDebugRequests   :: Either Text (XhrRequest XhrPayload) -> JSM ()
       -- ^ JSM action to run on each triggered request
     }
@@ -57,6 +63,7 @@ data ClientOptions = ClientOptions
 defaultClientOptions :: ClientOptions
 defaultClientOptions = ClientOptions
     { optsWithCredentials = False
+    , optsRequestFixup    = return
     , optsDebugRequests   = const (return ())
     }
 
@@ -132,9 +139,6 @@ data Req t = Req
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
-  -- , reqWithCreds :: Bool
-    -- ^ set the withCredentials XHR flag
-  -- , debugReq     :: Either Text (XhrRequest XhrPayload) -> JSM ()
   }
 
 defReq :: Req t
@@ -275,7 +279,7 @@ performRequests reqMeth rs reqHost opts trigger = do
   performEvent_ $ ffor (reqs) $
       liftJSM . mapM_ (optsDebugRequests opts $)
 
-  resps <- performSomeRequestsAsync reqs
+  resps <- performSomeRequestsAsync opts reqs
   return $ getCompose <$> resps
 
 -- | Issues a collection of requests when the supplied Event fires.  When ALL requests from a given firing complete, the results are collected and returned via the return Event.
@@ -287,9 +291,10 @@ performSomeRequestsAsync
         TriggerEvent t m,
         Traversable f,
         IsXhrPayload a)
-    => Event t (f (Either Text (XhrRequest a)))
+    => ClientOptions
+    -> Event t (f (Either Text (XhrRequest a)))
     -> m (Event t (f (Either Text XhrResponse)))
-performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap return
+performSomeRequestsAsync opts = performSomeRequestsAsync' opts newXMLHttpRequest . fmap return
 
 
 ------------------------------------------------------------------------------
@@ -297,9 +302,10 @@ performSomeRequestsAsync = performSomeRequestsAsync' newXMLHttpRequest . fmap re
 -- that accepts 'f (Either e (XhrRequestb))' events
 performSomeRequestsAsync'
     :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
-    => (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
+    => ClientOptions
+    -> (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
     -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
-performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
+performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs
   resps <- forM rs $ \r -> case r of
       Left e -> do
@@ -307,7 +313,8 @@ performSomeRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb ->
           return resp
       Right r' -> do
           resp <- liftIO newEmptyMVar
-          _ <- newXhr r' $ liftIO . putMVar resp . Right
+          r'' <- liftIO $ (optsRequestFixup opts) r'
+          _ <- newXhr r'' $ liftIO . putMVar resp . Right
           return resp
   _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar
   return ()

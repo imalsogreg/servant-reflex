@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -14,6 +15,7 @@ import Control.Monad.Fix (MonadFix)
 import Data.Monoid (First(..), (<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import GHC.TypeLits
 import Servant.API
 import API
@@ -43,7 +45,7 @@ runMulti :: forall t m. (SupportsServantReflex t m,
 runMulti = do
     url <- baseUrlWidget
     el "br" blank
-    let (_ :<|> _ :<|> sayHi :<|> dbl :<|> _ :<|> _ ) =
+    let (_ :<|> _ :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _ ) =
             clientA api (Proxy :: Proxy m) (Proxy :: Proxy []) (Proxy :: Proxy Int) url
 
     num :: Dynamic t (Either Text Double) <- fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
@@ -66,9 +68,12 @@ runMulti = do
             textInput def
         gust <- fmap (value) $ divClass "gusto-input" $ checkbox False def
         b <- button "Go"
-        r' <- sayHi (fmap QParamSome <$> nms) (fmap (:[]) $ grts) (constDyn [True, False]) (1 <$ b)
+        r' <- sayHi (fmap QParamSome <$> nms) (fmap (:[]) $ grts)
+                    (constDyn [True, False]) (1 <$ b)
 
-        dynText =<< holdDyn "Waiting" (T.pack . show . catMaybes . fmap reqSuccess  <$> r')
+        dynText =<< holdDyn "Waiting" (T.pack . show . catMaybes .
+                                       fmap reqSuccess  <$> r')
+
 
     return ()
 
@@ -91,8 +96,12 @@ run = mdo
   el "br" (return ())
 
   -- Name the computed API client functions
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl :<|> multi :<|> qna :<|> doRaw) =
-        client api (Proxy :: Proxy m) (Proxy :: Proxy Int) url
+  let tweakRequest = ClientOptions $ \r -> do
+          putStrLn ("Got req: " ++ show r)
+          return $ r & withCredentials .~ True
+  let (getUnit :<|> getInt :<|> sayhi :<|> dbl
+       :<|> multi :<|> qna :<|> secret :<|> doRaw) =
+        clientWithOpts api (Proxy :: Proxy m) (Proxy :: Proxy Int) url tweakRequest
 
       c2 = client (Proxy :: Proxy ComprehensiveAPI) (Proxy :: Proxy m) (Proxy :: Proxy ()) url -- Just make sure this compiles for now
 
@@ -176,6 +185,18 @@ run = mdo
     rr  <- qna dQ ev
     el "p" $
       dynText =<< holdDyn "No Answer" (unAnswer <$> fmapMaybe reqSuccess rr)
+
+  divClass "demo-group" $ do
+    un <- fmap value $ text "Username"    >> textArea def
+    pw <- fmap value $ text "Unhidden PW" >> textArea def
+    let ba :: Dynamic t (BasicAuthData ) = BasicAuthData
+                                           <$> fmap T.encodeUtf8 un
+                                           <*> fmap T.encodeUtf8 pw
+    b <- button "Get secret"
+    r  <- secret (Just <$> ba) (0 <$ b)
+    res <- holdDyn Nothing (reqSuccess <$> r)
+    display res
+
 
 showXhrResponse :: XhrResponse -> Text
 showXhrResponse (XhrResponse stat stattxt rbmay rtmay respHeaders) =

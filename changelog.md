@@ -1,3 +1,18 @@
+0.3.3
+-----
+
+Explicitly escape reserved characters from path pieces and query parameters
+
+
+0.3.2
+-----
+
+- **Addition of 'Servant.Reflex.Common.Req.ClientOpts'** which
+allows the users to apply a final adjustment to Requests before
+thery are sent, such as setting the 'withCredentials' flag
+or print the Request to the console for debugging
+[PR #47](https://github.com/imalsogreg/servant-reflex/pull/47)
+
 0.3
 ---
 

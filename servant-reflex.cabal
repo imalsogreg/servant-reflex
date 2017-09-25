@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.3.1
+Version: 0.3.2
 Synopsis: Servant reflex API generator
 Description: Servant reflex API generator
 License: BSD3
@@ -33,7 +33,7 @@ library
     data-default        >= 0.5  && < 0.8,
     exceptions          >= 0.8  && < 0.9,
     ghcjs-dom           >= 0.2  && < 0.10,
-    http-api-data       >= 0.2  && < 0.4,
+    http-api-data       >= 0.3.6 && < 0.4,
     http-media          >= 0.6  && < 0.7,
     jsaddle             >= 0.8  && < 0.10,
     mtl                 >= 2.2.1 && < 2.3,

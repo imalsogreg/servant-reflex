@@ -28,6 +28,7 @@ import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
+import qualified Network.URI                as N
 import           Reflex.Dom                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
@@ -170,7 +171,7 @@ reqToReflexRequest reqMeth reqHost req =
 
       urlPath :: Dynamic t (Either Text Text)
       urlPath = (fmap.fmap)
-                (T.intercalate "/" . fmap (builderToText . toEncodedUrlPiece))
+                (T.intercalate "/" . fmap escape)
                 urlParts
 
       queryPartString :: (Text, QueryPart t) -> Dynamic t (Maybe (Either Text Text))
@@ -182,7 +183,9 @@ reqToReflexRequest reqMeth reqHost req =
         QueryPartParams ps -> ffor ps $ \pStrings ->
           if null pStrings
           then Nothing
-          else Just $ Right (T.intercalate "&" (fmap (\p -> pName <> "=" <> p) pStrings))
+          else Just . Right
+               . T.intercalate "&"
+               $ fmap (\p -> pName <> "=" <> escape p) pStrings
         QueryPartFlag fl -> ffor fl $ \case
           True ->  Just $ Right pName
           False -> Nothing
@@ -400,3 +403,6 @@ fmapL f (Left e)  = Left (f e)
 
 builderToText :: Builder.Builder -> T.Text
 builderToText = TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString
+
+escape :: T.Text -> T.Text
+escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString . toEncodedUrlPiece

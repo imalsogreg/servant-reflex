@@ -178,7 +178,7 @@ reqToReflexRequest reqMeth reqHost req =
       queryPartString (pName, qp) = case qp of
         QueryPartParam p -> ffor p $ \case
           Left e         -> Just (Left e)
-          Right (Just a) -> Just (Right $ pName <> "=" <> a)
+          Right (Just a) -> Just (Right $ pName <> "=" <> escape a)
           Right Nothing  -> Nothing
         QueryPartParams ps -> ffor ps $ \pStrings ->
           if null pStrings

@@ -30,7 +30,6 @@ module Servant.Reflex
   , toHeaders
   , HasClient
   , Client
-  , withCredentials
   , module Servant.Common.Req
   , module Servant.Common.BaseUrl
   ) where

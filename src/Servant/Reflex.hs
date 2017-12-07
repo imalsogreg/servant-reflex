@@ -68,7 +68,7 @@ import           Reflex.Dom              (Dynamic, Event, Reflex,
 import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
                                           showBaseUrl,
                                           SupportsServantReflex)
-import           Servant.Common.Req      (ClientOptions(..), MimeUnrender,
+import           Servant.Common.Req      (ClientOptions(..), MimeUnrender(..),
                                           defaultClientOptions,
                                           Req, ReqResult(..), QParam(..),
                                           QueryPart(..), addHeader, authData,

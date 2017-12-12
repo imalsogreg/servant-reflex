@@ -37,7 +37,7 @@ type API = "getint"  :> Get '[JSON] Int
                                                         (constDyn (BasePath "/"))
 ```
 
-These client functions are computed from your API type. They manage serialization, XhrRequest generation, and deserialization for you. `a` parameters used in URL captures become `Dynamic t (Either Text a)` parameters in the client functions. 'QueryFlag', 'QueryParams' and 'QueryParam' API parameters map to 'Dynamic t Bool', 'Dynamic t [a]' and 'Dynamic t (QParam a)' respectively. These parameters to the client function are wrapped with failure possibility to allow you to indicate at any time whether input validation for that parameter has failed and no valid XHR request can be generated. The final parameter is a trigger event for the XHR request. The return value `Event t (ReqResult a)` contains responses from the API server.
+These client functions are computed from your API type. They manage serialization, `XhrRequest` generation, and deserialization for you. `a` parameters used in URL captures become `Dynamic t (Either Text a)` parameters in the client functions. `QueryFlag`, `QueryParams` and `QueryParam` API parameters map to `Dynamic t Bool`, `Dynamic t [a]` and `Dynamic t (QParam a)` respectively. These parameters to the client function are wrapped with failure possibility to allow you to indicate at any time whether input validation for that parameter has failed and no valid XHR request can be generated. The final parameter is a trigger event for the XHR request. The return value `Event t (ReqResult a)` contains responses from the API server.
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
@@ -173,7 +173,7 @@ So far we have used an `Event t ()` to trigger sending a request. If we choose e
 
 ## Simultaneous requests
 
-'Servant.Reflex.Multi' provides an alternative client-generation function called 'clientA' (client applicative). Choose a container type that has both `Applicative` and `Traversable` instances, and pass it to `clientA` through another 'Proxy'. Our `sayHi` client function will then have this type:
+`Servant.Reflex.Multi` provides an alternative client-generation function called `clientA` (client applicative). Choose a container type that has both `Applicative` and `Traversable` instances, and pass it to `clientA` through another `Proxy`. Our `sayHi` client function will then have this type:
 
 ```haskell
 sayHi
@@ -184,4 +184,4 @@ sayHi
   -> m (Event t (f (ReqResult tag Text)))
 ```
 
-The dynamic params are each wrapped in `f`. For every firing of the trigger event `tag`, all of these parameters will be combined according to `f`'s applicative instance (when `f` is `[]`, you will get all combinations of all parameters taken together as a request; when `f` is 'ZipList', the Nth elemens of each parameters list will be taken together as a request). Using this interface, you can trigger many XHR's from a single event occurence, and expect the responses to be structured the same way as the requests.
+The dynamic params are each wrapped in `f`. For every firing of the trigger event `tag`, all of these parameters will be combined according to `f`'s `Applicative` instance (when `f` is `[]`, you will get all combinations of all parameters taken together as a request; when `f` is `ZipList`, the Nth elemens of each parameters list will be taken together as a request). Using this interface, you can trigger many XHR's from a single event occurence, and expect the responses to be structured the same way as the requests.

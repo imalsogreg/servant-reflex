@@ -7,5 +7,7 @@ in reflex-platform.ghc.override {
     servant-snap        = dc (self.callPackage (c2n deps/servant-snap) {});
     heist               = dc (self.callPackage (c2n deps/servant-snap/deps/snap/deps/heist) {});
     xmlhtml             = dc (self.callPackage (c2n deps/servant-snap/deps/snap/deps/xmlhtml) {});
+    servant             = dc (self.callPackage (c2n deps/servant/servant) {});
+    servant-client-core = dc (self.callPackage (c2n deps/servant/servant-client-core) {});
   };
 }

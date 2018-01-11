@@ -150,6 +150,19 @@ instance {-# OVERLAPPABLE #-}
             reqs' = fmap (\r -> r { reqMethod = method }) <$> reqs
 
 
+instance {-# OVERLAPPABLE #-}
+  (ReflectMethod method,
+   SupportsServantReflex t m,
+   Applicative f,
+   Traversable f
+  ) => HasClientMulti t m (Verb method status cts' ()) f tag where
+  type ClientMulti t m (Verb method status cts' ()) f tag =
+      Event t tag -> m (Event t (f (ReqResult tag ())))
+  clientWithRouteMulti Proxy _ _ _ req baseurl opts vals =
+     (fmap . fmap . fmap) (() <$) $ performRequestsNoBody method req baseurl opts vals
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+
+
 ------------------------------------------------------------------------------
 -- -- VERB (No content) --
 instance {-# OVERLAPPING #-}

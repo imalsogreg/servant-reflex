@@ -163,6 +163,17 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
     where p = (fmap . fmap) (toUrlPiece) val
 
 
+instance {-# OVERLAPPABLE #-}
+  (ReflectMethod method, SupportsServantReflex t m
+  ) => HasClient t m (Verb method status cts' ()) tag where
+  type Client t m (Verb method status cts' ()) tag =
+      Event t tag -> m (Event t (ReqResult tag ()))
+  clientWithRoute Proxy _ _ req baseurl opts trigs =
+      fmap ((() <$) . runIdentity) <$> performRequestsNoBody method (constDyn $ Identity $ req') baseurl opts trigs
+      where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
+            req' = req { reqMethod = method }
+
+
 -- VERB (Returning content) --
 instance {-# OVERLAPPABLE #-}
   -- Note [Non-Empty Content Types]

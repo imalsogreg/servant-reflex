@@ -29,3 +29,4 @@ executable back
                      , text  >= 1.0 && < 1.3
   -- hs-source-dirs:
   default-language:    Haskell2010
+  other-modules: API

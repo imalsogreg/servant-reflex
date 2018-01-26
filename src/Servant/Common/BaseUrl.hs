@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import           GHC.Generics
 import           Language.Javascript.JSaddle.Monad (MonadJSM)
 import           Reflex
-import           Reflex.Dom
+import           Reflex.Dom.Core
 import           Text.Read
 
 

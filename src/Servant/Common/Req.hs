@@ -29,7 +29,7 @@ import qualified Data.Text.Encoding         as TE
 import           Data.Traversable           (forM)
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
 import qualified Network.URI                as N
-import           Reflex.Dom                 hiding (tag)
+import           Reflex.Dom.Core                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))

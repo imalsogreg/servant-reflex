@@ -55,7 +55,7 @@ import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
                                          ReqBody, ToHttpApiData (..), Vault,
                                          Verb, contentType)
 
-import           Reflex.Dom             (Dynamic, Event, Reflex,
+import           Reflex.Dom.Core        (Dynamic, Event, Reflex,
                                          XhrRequest (..),
                                          XhrResponseHeaders (..),
                                          attachPromptlyDynWith, constDyn)

@@ -58,7 +58,7 @@ import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
                                           ToHttpApiData(..), Vault, Verb)
 import qualified Servant.Auth            as Auth
 
-import           Reflex.Dom              (Dynamic, Event, Reflex,
+import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           XhrRequest(..),
                                           XhrResponseHeaders(..),
                                           XhrResponse(..), attachPromptlyDynWith, constDyn, ffor, fmapMaybe,

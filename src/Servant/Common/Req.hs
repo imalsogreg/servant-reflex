@@ -33,11 +33,11 @@ import qualified Data.Text                  as T
 import qualified Data.Text.Lazy             as TL
 import qualified Data.Text.Encoding         as T
 import           Data.Traversable           (forM)
-import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM)
+import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
 import qualified Language.Javascript.JSaddle as JS
 import qualified Data.JSString.Text         as JS (lazyTextFromJSString)
 import qualified Network.URI                as N
-import           Reflex.Dom                 hiding (tag)
+import           Reflex.Dom.Core                 hiding (tag)
 import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
                                              SupportsServantReflex)
 import           Servant.API.ContentTypes   ( NoContent(..), Accept, JSON
@@ -63,7 +63,7 @@ data ReqResult tag a
   deriving (Functor)
 
 data ClientOptions = ClientOptions
-    { optsRequestFixup :: forall a. Show a => XhrRequest a -> IO (XhrRequest a)
+    { optsRequestFixup :: forall a. Show a => XhrRequest a -> JSM (XhrRequest a)
       -- ^ Aribtrarily modify requests just before they are sent.
       -- Warning: This escape hatch opens the possibility for your
       -- requests to diverge from what the server expects, when the
@@ -319,7 +319,7 @@ performSomeRequestsAsync opts =
 -- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
 -- that accepts 'f (Either e (XhrRequestb))' events
 performSomeRequestsAsync'
-    :: (MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f, Show b)
+    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f, Show b)
     => ClientOptions
     -> (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
     -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
@@ -331,7 +331,7 @@ performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs 
           return resp
       Right r' -> do
           resp <- liftIO newEmptyMVar
-          r'' <- liftIO $ (optsRequestFixup opts) r'
+          r'' <- liftJSM $ (optsRequestFixup opts) r'
           _ <- newXhr r'' $ liftIO . putMVar resp . Right
           return resp
   _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar

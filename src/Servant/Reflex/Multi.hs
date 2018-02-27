@@ -74,6 +74,8 @@ import           Servant.Common.Req     (ClientOptions, MimeUnrender,
                                          qParams, reqBody, reqFailure,
                                          reqMethod, reqSuccess, reqSuccess',
                                          respHeaders, response, withCredentials)
+import Servant.Checked.Exceptions.Internal.Envelope (Envelope)
+import Servant.Checked.Exceptions.Internal.Servant.API (NoThrow, Throws, Throwing, ThrowingNonterminal)
 import           Servant.Reflex         (BuildHeaderKeysTo (..), toHeaders)
 
 
@@ -386,3 +388,143 @@ instance (HasClientMulti t m api f tag, Reflex t, Applicative f)
       where
         req'  a r = r { authData = Just (constDyn a) }
         reqs' = liftA2 req' <$> authdatas <*> reqs
+
+{- servant-checked-exceptions
+~~~~~~~~~~~~~~~~~~~~~
+-}
+
+-- | Change a 'Throws' into 'Throwing'.
+instance (HasClientMulti t m (Throwing '[e] :> api) f tag) => HasClientMulti t m (Throws e :> api) f tag where
+  type ClientMulti t m (Throws e :> api) f tag = ClientMulti t m (Throwing '[e] :> api) f tag
+
+  clientWithRouteMulti
+    :: Proxy (Throws e :> api)
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m (Throwing '[e] :> api) f tag
+  clientWithRouteMulti _ = clientWithRouteMulti (Proxy :: Proxy (Throwing '[e] :> api))
+
+-- | When @'Throwing' es@ comes before a 'Verb', change it into the same 'Verb'
+-- but returning an @'Envelope' es@.
+instance (HasClientMulti t m (Verb method status ctypes (Envelope es a)) f tag) =>
+    HasClientMulti t m (Throwing es :> Verb method status ctypes a) f tag where
+
+  type ClientMulti t m (Throwing es :> Verb method status ctypes a) f tag =
+    ClientMulti t m (Verb method status ctypes (Envelope es a)) f tag
+
+  clientWithRouteMulti
+    :: Proxy (Throwing es :> Verb method status ctypes a)
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m (Verb method status ctypes (Envelope es a)) f tag
+  clientWithRouteMulti Proxy =
+    clientWithRouteMulti (Proxy :: Proxy (Verb method status ctypes (Envelope es a)))
+
+-- | When 'NoThrow' comes before a 'Verb', change it into the same 'Verb'
+-- but returning an @'Envelope' \'[]@.
+instance (HasClientMulti t m (Verb method status ctypes (Envelope '[] a)) f tag) =>
+    HasClientMulti t m (NoThrow :> Verb method status ctypes a) f tag where
+
+  type ClientMulti t m (NoThrow :> Verb method status ctypes a) f tag =
+    ClientMulti t m (Verb method status ctypes (Envelope '[] a)) f tag
+
+  clientWithRouteMulti
+    :: Proxy (NoThrow :> Verb method status ctypes a)
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m (Verb method status ctypes (Envelope '[] a)) f tag
+  clientWithRouteMulti Proxy =
+    clientWithRouteMulti (Proxy :: Proxy (Verb method status ctypes (Envelope '[] a)))
+
+-- | When @'Throwing' es@ comes before ':<|>', push @'Throwing' es@ into each
+-- branch of the API.
+instance HasClientMulti t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) f tag =>
+    HasClientMulti t m (Throwing es :> (api1 :<|> api2)) f tag where
+
+  type ClientMulti t m (Throwing es :> (api1 :<|> api2)) f tag =
+    ClientMulti t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) f tag
+
+  clientWithRouteMulti
+    :: Proxy (Throwing es :> (api1 :<|> api2))
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) f tag
+  clientWithRouteMulti _ =
+    clientWithRouteMulti (Proxy :: Proxy ((Throwing es :> api1) :<|> (Throwing es :> api2)))
+
+-- | When 'NoThrow' comes before ':<|>', push 'NoThrow' into each branch of the
+-- API.
+instance HasClientMulti t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) f tag =>
+    HasClientMulti t m (NoThrow :> (api1 :<|> api2)) f tag where
+
+  type ClientMulti t m (NoThrow :> (api1 :<|> api2)) f tag =
+    ClientMulti t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) f tag
+
+  clientWithRouteMulti
+    :: Proxy (NoThrow :> (api1 :<|> api2))
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) f tag
+  clientWithRouteMulti _ =
+    clientWithRouteMulti (Proxy :: Proxy ((NoThrow :> api1) :<|> (NoThrow :> api2)))
+
+-- | When a @'Throws' e@ comes immediately after a @'Throwing' es@, 'Snoc' the
+-- @e@ onto the @es@. Otherwise, if @'Throws' e@ comes before any other
+-- combinator, push it down so it is closer to the 'Verb'.
+instance HasClientMulti t m (ThrowingNonterminal (Throwing es :> api :> apis)) f tag =>
+    HasClientMulti t m (Throwing es :> api :> apis) f tag where
+
+  type ClientMulti t m (Throwing es :> api :> apis) f tag =
+    ClientMulti t m (ThrowingNonterminal (Throwing es :> api :> apis)) f tag
+
+  clientWithRouteMulti
+    :: Proxy (Throwing es :> api :> apis)
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m (ThrowingNonterminal (Throwing es :> api :> apis)) f tag
+  clientWithRouteMulti _ =
+    clientWithRouteMulti (Proxy :: Proxy (ThrowingNonterminal (Throwing es :> api :> apis)))
+
+-- | When 'NoThrow' comes before any other combinator, push it down so it is
+-- closer to the 'Verb'.
+instance HasClientMulti t m (api :> NoThrow :> apis) f tag =>
+    HasClientMulti t m (NoThrow :> api :> apis) f tag where
+
+  type ClientMulti t m (NoThrow :> api :> apis) f tag =
+    ClientMulti t m (api :> NoThrow :> apis) f tag
+
+  clientWithRouteMulti
+    :: Proxy (NoThrow :> api :> apis)
+    -> Proxy m
+    -> Proxy f
+    -> Proxy tag
+    -> Dynamic t (f (Req t))
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> ClientMulti t m (api :> NoThrow :> apis) f tag
+  clientWithRouteMulti _ =
+    clientWithRouteMulti (Proxy :: Proxy (api :> NoThrow :> apis))

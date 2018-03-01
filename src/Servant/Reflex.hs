@@ -1,13 +1,17 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE ExtendedDefaultRules       #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -36,8 +40,11 @@ module Servant.Reflex
 
 ------------------------------------------------------------------------------
 import           Control.Applicative
+import qualified Data.ByteString        as BS
+import qualified Data.ByteString.Lazy   as BL
 import           Data.CaseInsensitive   (mk)
 import           Data.Functor.Identity
+import           Data.Kind              (Type)
 import qualified Data.Map               as Map
 import           Data.Monoid            ((<>))
 import           Data.Proxy             (Proxy (..))
@@ -45,17 +52,21 @@ import qualified Data.Set               as Set
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Text.Encoding     as E
+import qualified Data.Text.Lazy         as TL
 import           GHC.Exts               (Constraint)
 import           GHC.TypeLits           (KnownSymbol, symbolVal)
-import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
-                                         BasicAuthData, BuildHeadersTo (..),
-                                         Capture, Header, Headers (..),
-                                         HttpVersion, IsSecure, MimeRender (..),
-                                         NoContent, QueryFlag, QueryParam,
-                                         QueryParams, Raw, ReflectMethod (..),
-                                         RemoteHost, ReqBody,
-                                         ToHttpApiData (..), Vault, Verb,
-                                         contentType)
+import           GHCJS.DOM.Types        (Blob, Document, FormData)
+import           Servant.API            ((:<|>) (..), (:>), Accept (..),
+                                         BasicAuth, BasicAuthData,
+                                         BuildHeadersTo (..), Capture,
+                                         FormUrlEncoded, Header, Headers (..),
+                                         HttpVersion, IsSecure, JSON,
+                                         MimeRender (..), NoContent,
+                                         OctetStream, PlainText, QueryFlag,
+                                         QueryParam, QueryParams, Raw,
+                                         ReflectMethod (..), RemoteHost,
+                                         ReqBody, ToHttpApiData (..), Vault,
+                                         Verb, contentType)
 import qualified Servant.Auth           as Auth
 
 import           Reflex.Dom.Core        (Dynamic, Event, IsXhrPayload, Reflex,
@@ -69,7 +80,7 @@ import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
                                          SupportsServantReflex, baseUrlWidget,
                                          showBaseUrl)
 import           Servant.Common.Req     (ClientOptions (..), MimeUnrender (..),
-                                         QParam (..), QueryPart (..), Req,
+                                         QParam (..), QueryPart (..), Req (..),
                                          ReqResult (..), addHeader, authData,
                                          defReq, defaultClientOptions,
                                          evalResponse, performRequestsCT,
@@ -119,9 +130,9 @@ clientWithOpts p q t baseurl = clientWithRoute p q t defReq baseurl
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
-class HasClient t m layout (tag :: *) where
-  type Client t m layout tag :: *
-  clientWithRoute :: IsXhrPayload o => Proxy layout -> Proxy m -> Proxy tag -> Req t o -> Dynamic t BaseUrl -> ClientOptions -> Client t m layout tag
+class HasClient t m layout (tag :: Type) where
+  type Client t m layout tag :: Type
+  clientWithRoute :: Proxy layout -> Proxy m -> Proxy tag -> Req t -> Dynamic t BaseUrl -> ClientOptions -> Client t m layout tag
 
 
 instance (HasClient t m a tag, HasClient t m b tag) => HasClient t m (a :<|> b) tag where
@@ -456,22 +467,66 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
 
-instance (MimeRender ct a, HasClient t m sublayout tag, Reflex t)
-      => HasClient t m (ReqBody (ct ': cts) a :> sublayout) tag where
+instance (GHCJS'MimeRender ct a, IsXhrPayload (ToSend ct a), Show (ToSend ct a), HasClient t m sublayout tag, Reflex t)
+      => HasClient t m (ReqBody (ct ': cts) (a :: Type) :> sublayout) tag where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) tag =
-    Dynamic t (Either Text a) -> Client t m sublayout tag
+    Dynamic t (Either Text (ToConvert ct a)) -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts body =
+  clientWithRoute Proxy q t Req{..} baseurl opts body =
     clientWithRoute (Proxy :: Proxy sublayout) q t req' baseurl opts
-       where req'        = req { reqBody = bodyBytesCT }
+       where req'        = Req { reqBody = Just $ (fmap . fmap)
+                                           (\b -> (ghcjsMimeRender ctProxy atProxy b, ctString)) body
+                               , ..}
              ctProxy     = Proxy :: Proxy ct
+             atProxy     = Proxy :: Proxy a
              ctString    = T.pack $ show $ contentType ctProxy
-             bodyBytesCT = Just $ (fmap . fmap)
-                             (\b -> (mimeRender ctProxy b, ctString))
-                             body
 
+class Accept ctype => GHCJS'MimeRender (ctype :: Type) (a :: Type) where
+  type ToConvert ctype a :: Type
+  type ToConvert ctype a = a
 
+  type ToSend ctype a :: Type
+  type ToSend ctype a = BS.ByteString
+
+  ghcjsMimeRender
+    :: IsXhrPayload (ToSend ctype a)
+    => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
+  default ghcjsMimeRender
+    :: ( IsXhrPayload (ToSend ctype a)
+       , MimeRender ctype a
+       , MimeRender ctype (ToConvert ctype a)
+       , ToSend ctype a ~ BS.ByteString)
+    => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
+  ghcjsMimeRender ctype _ = BL.toStrict . mimeRender ctype
+
+instance MimeRender JSON x => GHCJS'MimeRender JSON x
+
+instance MimeRender FormUrlEncoded x => GHCJS'MimeRender FormUrlEncoded x
+
+instance GHCJS'MimeRender OctetStream BL.ByteString where
+  type ToConvert OctetStream BL.ByteString = Blob
+  type ToSend OctetStream BL.ByteString = Blob
+  ghcjsMimeRender _ _ = id
+
+instance GHCJS'MimeRender PlainText String where
+  type ToSend PlainText String = Text
+  ghcjsMimeRender _ _ = T.pack
+
+instance GHCJS'MimeRender PlainText Text where
+  type ToSend PlainText Text = Text
+  ghcjsMimeRender _ _ = id
+
+instance GHCJS'MimeRender PlainText TL.Text where
+  type ToSend PlainText TL.Text = Text
+  ghcjsMimeRender _ _ = TL.toStrict
+
+instance GHCJS'MimeRender PlainText BL.ByteString where
+  type ToSend PlainText BL.ByteString = BS.ByteString
+  ghcjsMimeRender _ _ = BL.toStrict
+
+instance GHCJS'MimeRender PlainText BS.ByteString where
+  ghcjsMimeRender _ _ = id
 
 -- | Make the querying function append @path@ to the request path.
 instance (KnownSymbol path, HasClient t m sublayout tag, Reflex t) => HasClient t m (path :> sublayout) tag where

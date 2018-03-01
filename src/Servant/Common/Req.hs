@@ -7,10 +7,12 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Servant.Common.Req where
 
@@ -36,7 +38,6 @@ import qualified Data.Text                         as T
 import qualified Data.Text.Encoding                as T
 import qualified Data.Text.Lazy                    as TL
 import           Data.Traversable                  (forM)
-import           GHCJS.DOM.Types                   (Blob, Document, FormData)
 import qualified Language.Javascript.JSaddle       as JS
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
 import qualified Network.URI                       as N
@@ -148,7 +149,7 @@ data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
 -------------------------------------------------------------------------------
 -- The data structure used to build up request information while traversing
 -- the shape of a servant API
-data Req t o = Req
+data Req t = forall o. (IsXhrPayload o, Show o) => Req
   { reqMethod    :: Text
   , reqPathParts :: [Dynamic t (Either Text Text)]
   , qParams      :: [(Text, QueryPart t)]
@@ -158,14 +159,14 @@ data Req t o = Req
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
-defReq :: IsXhrPayload o => Req t o
-defReq = Req "GET" [] [] Nothing [] def Nothing
+defReq :: Req t
+defReq = Req "GET" [] [] (Nothing :: Maybe (Dynamic t (Either Text ((), Text)))) [] def Nothing
 
-prependToPathParts :: Dynamic t (Either Text Text) -> Req t o -> Req t o
+prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
-addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t o -> Req t o
+addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . toHeader) val) : headers req }
 
 
@@ -175,13 +176,15 @@ addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . to
 -- instance ReflexDom'MimeRender BL.ByteString Blob where
 --   ghcjsMimerender _ = id
 
+data SomeXhrRequest = forall o. (IsXhrPayload o, Show o) => SomeXhrRequest (XhrRequest (Maybe o))
+
 reqToReflexRequest
-      :: forall t o. Reflex t
+      :: forall t. Reflex t
       => Text
       -> Dynamic t BaseUrl
-      -> Req t o
-      -> Dynamic t (Either Text (XhrRequest (Maybe o)))
-reqToReflexRequest reqMeth reqHost req =
+      -> Req t
+      -> Dynamic t (Either Text SomeXhrRequest)
+reqToReflexRequest reqMeth reqHost req@(Req _ _ _ (reqBody :: Maybe (Dynamic t (Either Text (o, Text)))) _ _ _) =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -251,7 +254,7 @@ reqToReflexRequest reqMeth reqHost req =
                       }
 
       xhrOpts :: Dynamic t (Either Text (XhrRequestConfig (Maybe o)))
-      xhrOpts = case reqBody req of
+      xhrOpts = case reqBody of
         Nothing    -> ffor xhrHeaders $ \case
                                Left e -> Left e
                                Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
@@ -276,7 +279,7 @@ reqToReflexRequest reqMeth reqHost req =
         Nothing   -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (\p opt -> SomeXhrRequest $ XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
   in xhrReq
 
@@ -289,19 +292,20 @@ instance IsXhrPayload o => IsXhrPayload (Maybe o) where
   sendXhrPayload xhr = maybe (sendXhrPayload xhr ()) (sendXhrPayload xhr)
 
 -- | This function performs the request
-performRequests :: forall t o m f tag. (SupportsServantReflex t m, Traversable f, IsXhrPayload o, Show o)
+performRequests :: forall t m f tag. (SupportsServantReflex t m, Traversable f)
                 => Text
-                -> Dynamic t (f (Req t o))
+                -> Dynamic t (f (Req t))
                 -> Dynamic t BaseUrl
                 -> ClientOptions
                 -> Event t tag
                 -> m (Event t (tag, f (Either Text XhrResponse)))
 performRequests reqMeth rs reqHost opts trigger = do
   let xhrReqs =
-          join $ (\(fxhr :: f (Req t o)) -> sequence $
+          join $ (\(fxhr :: f (Req t)) -> sequence $
                      reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
 
       -- xhrReqs = fmap snd <$> xhrReqsAndDebugs
+      reqs :: Event t (Compose ((,) tag) f (Either Text SomeXhrRequest))
       reqs    = attachPromptlyDynWith
                 (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
 
@@ -317,32 +321,31 @@ performSomeRequestsAsync
         HasWebView (Performable m),
         PerformEvent t m,
         TriggerEvent t m,
-        Traversable f,
-        IsXhrPayload a,
-        Show a
+        Traversable f
        )
     => ClientOptions
-    -> Event t (f (Either Text (XhrRequest a)))
+    -> Event t (f (Either Text SomeXhrRequest))
     -> m (Event t (f (Either Text XhrResponse)))
-performSomeRequestsAsync opts =
-    performSomeRequestsAsync' opts newXMLHttpRequest . fmap return
+performSomeRequestsAsync opts sxhr =
+    performSomeRequestsAsync' opts newXMLHttpRequest $ return <$> sxhr
 
 
 ------------------------------------------------------------------------------
 -- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
 -- that accepts 'f (Either e (XhrRequestb))' events
 performSomeRequestsAsync'
-    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f, Show b)
+    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
     => ClientOptions
-    -> (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
-    -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
+    -> (forall b. IsXhrPayload b => XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
+    -> Event t (Performable m (f (Either Text SomeXhrRequest)))
+    -> m (Event t (f (Either Text a)))
 performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs
   resps <- forM rs $ \r -> case r of
       Left e -> do
           resp <- liftIO $ newMVar (Left e)
           return resp
-      Right r' -> do
+      Right (SomeXhrRequest r') -> do
           resp <- liftIO newEmptyMVar
           r'' <- liftJSM $ (optsRequestFixup opts) r'
           _ <- newXhr r'' $ liftIO . putMVar resp . Right
@@ -353,10 +356,10 @@ performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs 
 
 performRequestsCT
     :: (SupportsServantReflex t m,
-        MimeUnrender ct a, Traversable f, IsXhrPayload o, Show o)
+        MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
-    -> Dynamic t (f (Req t o))
+    -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag
@@ -377,10 +380,9 @@ performRequestsCT ct reqMeth reqs reqHost opts trigger = do
 
 performRequestsNoBody
     :: (SupportsServantReflex t m,
-        Traversable f,
-        IsXhrPayload o, Show o)
+        Traversable f)
     => Text
-    -> Dynamic t (f (Req t o))
+    -> Dynamic t (f (Req t))
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag

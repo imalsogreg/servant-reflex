@@ -467,7 +467,8 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
 -- >   where host = BaseUrl Http "localhost" 8080
 -- > -- then you can just use "addBook" to query that endpoint
 
-instance (GHCJS'MimeRender ct a, IsXhrPayload (ToSend ct a), Show (ToSend ct a), HasClient t m sublayout tag, Reflex t)
+instance (GHCJS'MimeRender ct a, IsXhrPayload (ToSend ct a), Show (ToSend ct a),
+          HasClient t m sublayout tag, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) (a :: Type) :> sublayout) tag where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) tag =
@@ -493,10 +494,8 @@ class Accept ctype => GHCJS'MimeRender (ctype :: Type) (a :: Type) where
     :: IsXhrPayload (ToSend ctype a)
     => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
   default ghcjsMimeRender
-    :: ( IsXhrPayload (ToSend ctype a)
-       , MimeRender ctype a
-       , MimeRender ctype (ToConvert ctype a)
-       , ToSend ctype a ~ BS.ByteString)
+    :: (IsXhrPayload (ToSend ctype a), MimeRender ctype a,
+        MimeRender ctype (ToConvert ctype a), ToSend ctype a ~ BS.ByteString)
     => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
   ghcjsMimeRender ctype _ = BL.toStrict . mimeRender ctype
 

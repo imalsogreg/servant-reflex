@@ -54,7 +54,11 @@ import           Web.HttpApiData                   (ToHttpApiData (..))
 import           Servant.API.BasicAuth
 -------------------------------------------------------------------------------
 
-jsonDecode = undefined
+-- #ifndef __GHCJS__
+-- jsonDecode :: JS.JSString -> Maybe a
+-- jsonDecode = error "jsonDecode is only available in GHCJS"
+-- #endif
+
 -----------------------------------------------------------------------------
 -- | The result of a request event
 data ReqResult tag a
@@ -159,6 +163,8 @@ data Req t = forall o. (IsXhrPayload o, Show o) => Req
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
+data SomeXhrRequest = forall o. (IsXhrPayload o, Show o) => SomeXhrRequest (XhrRequest (Maybe o))
+
 defReq :: Req t
 defReq = Req "GET" [] [] (Nothing :: Maybe (Dynamic t (Either Text ((), Text)))) [] def Nothing
 
@@ -168,15 +174,6 @@ prependToPathParts p req =
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . toHeader) val) : headers req }
-
-
--- class ReflexDom'MimeRender a b | b -> a where
---   ghcjsMimerender :: IsXhrPayload c => Proxy a -> b -> c
-
--- instance ReflexDom'MimeRender BL.ByteString Blob where
---   ghcjsMimerender _ = id
-
-data SomeXhrRequest = forall o. (IsXhrPayload o, Show o) => SomeXhrRequest (XhrRequest (Maybe o))
 
 reqToReflexRequest
       :: forall t. Reflex t
@@ -290,6 +287,9 @@ displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
 instance IsXhrPayload o => IsXhrPayload (Maybe o) where
   sendXhrPayload xhr = maybe (sendXhrPayload xhr ()) (sendXhrPayload xhr)
+
+instance (IsXhrPayload o, IsXhrPayload o') => IsXhrPayload (Either o o') where
+  sendXhrPayload xhr = either (sendXhrPayload xhr) (sendXhrPayload xhr)
 
 -- | This function performs the request
 performRequests :: forall t m f tag. (SupportsServantReflex t m, Traversable f)

@@ -8,6 +8,7 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
@@ -31,6 +32,7 @@ module Servant.Reflex
   , clientWithOpts
   , clientWithRoute
   , BuildHeaderKeysTo(..)
+  , GHCJS'MimeRender(..)
   , toHeaders
   , HasClient
   , Client
@@ -55,7 +57,7 @@ import qualified Data.Text.Encoding     as E
 import qualified Data.Text.Lazy         as TL
 import           GHC.Exts               (Constraint)
 import           GHC.TypeLits           (KnownSymbol, symbolVal)
-import           GHCJS.DOM.Types        (Blob, Document, FormData)
+import           GHCJS.DOM.Types        (Blob)
 import           Servant.API            ((:<|>) (..), (:>), Accept (..),
                                          BasicAuth, BasicAuthData,
                                          BuildHeadersTo (..), Capture,
@@ -494,7 +496,7 @@ class Accept ctype => GHCJS'MimeRender (ctype :: Type) (a :: Type) where
     :: IsXhrPayload (ToSend ctype a)
     => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
   default ghcjsMimeRender
-    :: (IsXhrPayload (ToSend ctype a), MimeRender ctype a,
+    :: (MimeRender ctype a,
         MimeRender ctype (ToConvert ctype a), ToSend ctype a ~ BS.ByteString)
     => Proxy ctype -> Proxy a -> ToConvert ctype a -> ToSend ctype a
   ghcjsMimeRender ctype _ = BL.toStrict . mimeRender ctype
@@ -504,9 +506,9 @@ instance MimeRender JSON x => GHCJS'MimeRender JSON x
 instance MimeRender FormUrlEncoded x => GHCJS'MimeRender FormUrlEncoded x
 
 instance GHCJS'MimeRender OctetStream BL.ByteString where
-  type ToConvert OctetStream BL.ByteString = Blob
-  type ToSend OctetStream BL.ByteString = Blob
-  ghcjsMimeRender _ _ = id
+  type ToConvert OctetStream BL.ByteString = Either BL.ByteString Blob
+  type ToSend OctetStream BL.ByteString = Either BS.ByteString Blob
+  ghcjsMimeRender _ _ = \case Left bl -> Left $ BL.toStrict bl; Right x -> Right x
 
 instance GHCJS'MimeRender PlainText String where
   type ToSend PlainText String = Text

@@ -42,56 +42,101 @@ module Servant.Reflex
 
 ------------------------------------------------------------------------------
 import           Control.Applicative
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Lazy   as BL
-import           Data.CaseInsensitive   (mk)
+import qualified Data.ByteString                                 as BS
+import qualified Data.ByteString.Lazy                            as BL
+import           Data.CaseInsensitive                            (mk)
 import           Data.Functor.Identity
-import           Data.Kind              (Type)
-import qualified Data.Map               as Map
-import           Data.Monoid            ((<>))
-import           Data.Proxy             (Proxy (..))
-import qualified Data.Set               as Set
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import qualified Data.Text.Encoding     as E
-import qualified Data.Text.Lazy         as TL
-import           GHC.Exts               (Constraint)
-import           GHC.TypeLits           (KnownSymbol, symbolVal)
-import           GHCJS.DOM.Types        (Blob)
-import           Servant.API            ((:<|>) (..), (:>), Accept (..),
-                                         BasicAuth, BasicAuthData,
-                                         BuildHeadersTo (..), Capture,
-                                         FormUrlEncoded, Header, Headers (..),
-                                         HttpVersion, IsSecure, JSON,
-                                         MimeRender (..), NoContent,
-                                         OctetStream, PlainText, QueryFlag,
-                                         QueryParam, QueryParams, Raw,
-                                         ReflectMethod (..), RemoteHost,
-                                         ReqBody, ToHttpApiData (..), Vault,
-                                         Verb, contentType)
-import qualified Servant.Auth           as Auth
+import           Data.Kind                                       (Type)
+import qualified Data.Map                                        as Map
+import           Data.Monoid                                     ((<>))
+import           Data.Proxy                                      (Proxy (..))
+import qualified Data.Set                                        as Set
+import           Data.Text                                       (Text)
+import qualified Data.Text                                       as T
+import qualified Data.Text.Encoding                              as E
+import qualified Data.Text.Lazy                                  as TL
+import           GHC.Exts                                        (Constraint)
+import           GHC.TypeLits                                    (KnownSymbol,
+                                                                  symbolVal)
+import           GHCJS.DOM.Types                                 (Blob)
+import           Servant.API                                     ((:<|>) (..),
+                                                                  (:>),
+                                                                  Accept (..),
+                                                                  BasicAuth,
+                                                                  BasicAuthData,
+                                                                  BuildHeadersTo (..),
+                                                                  Capture,
+                                                                  FormUrlEncoded,
+                                                                  Header,
+                                                                  Headers (..),
+                                                                  HttpVersion,
+                                                                  IsSecure,
+                                                                  JSON,
+                                                                  MimeRender (..),
+                                                                  NoContent,
+                                                                  OctetStream,
+                                                                  PlainText,
+                                                                  QueryFlag,
+                                                                  QueryParam,
+                                                                  QueryParams,
+                                                                  Raw,
+                                                                  ReflectMethod (..),
+                                                                  RemoteHost,
+                                                                  ReqBody,
+                                                                  ToHttpApiData (..),
+                                                                  Vault, Verb,
+                                                                  contentType)
+import qualified Servant.Auth                                    as Auth
 
-import           Reflex.Dom.Core        (Dynamic, Event, IsXhrPayload, Reflex,
-                                         XhrRequest (..), XhrResponse (..),
-                                         XhrResponseHeaders (..),
-                                         attachPromptlyDynWith, constDyn, ffor,
-                                         fmapMaybe, leftmost,
-                                         performRequestsAsync)
+import           Reflex.Dom.Core                                 (Dynamic,
+                                                                  Event,
+                                                                  IsXhrPayload,
+                                                                  Reflex,
+                                                                  XhrRequest (..),
+                                                                  XhrResponse (..),
+                                                                  XhrResponseHeaders (..),
+                                                                  attachPromptlyDynWith,
+                                                                  constDyn,
+                                                                  ffor,
+                                                                  fmapMaybe,
+                                                                  leftmost,
+                                                                  performRequestsAsync)
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
-                                         SupportsServantReflex, baseUrlWidget,
-                                         showBaseUrl)
-import           Servant.Common.Req     (ClientOptions (..), MimeUnrender (..),
-                                         QParam (..), QueryPart (..), Req (..),
-                                         ReqResult (..), addHeader, authData,
-                                         defReq, defaultClientOptions,
-                                         evalResponse, performRequestsCT,
-                                         performRequestsNoBody,
-                                         performSomeRequestsAsync,
-                                         prependToPathParts, qParamToQueryPart,
-                                         qParams, reqBody, reqFailure,
-                                         reqMethod, reqSuccess, reqTag,
-                                         respHeaders, response, withCredentials)
+import           Servant.Checked.Exceptions.Internal.Envelope    (Envelope)
+import           Servant.Checked.Exceptions.Internal.Servant.API (NoThrow,
+                                                                  Throwing,
+                                                                  ThrowingNonterminal,
+                                                                  Throws)
+import           Servant.Common.BaseUrl                          (BaseUrl (..),
+                                                                  Scheme (..),
+                                                                  SupportsServantReflex,
+                                                                  baseUrlWidget,
+                                                                  showBaseUrl)
+import           Servant.Common.Req                              (ClientOptions (..),
+                                                                  MimeUnrender (..),
+                                                                  QParam (..),
+                                                                  QueryPart (..),
+                                                                  Req (..),
+                                                                  ReqResult (..),
+                                                                  addHeader,
+                                                                  authData,
+                                                                  defReq,
+                                                                  defaultClientOptions,
+                                                                  evalResponse,
+                                                                  performRequestsCT,
+                                                                  performRequestsNoBody,
+                                                                  performSomeRequestsAsync,
+                                                                  prependToPathParts,
+                                                                  qParamToQueryPart,
+                                                                  qParams,
+                                                                  reqBody,
+                                                                  reqFailure,
+                                                                  reqMethod,
+                                                                  reqSuccess,
+                                                                  reqTag,
+                                                                  respHeaders,
+                                                                  response,
+                                                                  withCredentials)
 
 
 -- * Accessing APIs as a Client
@@ -621,3 +666,136 @@ type family HasCookieAuth xs :: Constraint where
   HasCookieAuth '[]         = CookieAuthNotEnabled
 
 class CookieAuthNotEnabled
+
+{- servant-checked-exceptions
+~~~~~~~~~~~~~~~~~~~~~
+-}
+
+-- | Change a 'Throws' into 'Throwing'.
+instance (HasClient t m (Throwing '[e] :> api) tag) => HasClient t m (Throws e :> api) tag where
+  type Client t m (Throws e :> api) tag = Client t m (Throwing '[e] :> api) tag
+
+  clientWithRoute
+    :: Proxy (Throws e :> api)
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m (Throwing '[e] :> api) tag
+  clientWithRoute _ = clientWithRoute (Proxy :: Proxy (Throwing '[e] :> api))
+
+-- | When @'Throwing' es@ comes before a 'Verb', change it into the same 'Verb'
+-- but returning an @'Envelope' es@.
+instance (HasClient t m (Verb method status ctypes (Envelope es a)) tag) =>
+    HasClient t m (Throwing es :> Verb method status ctypes a) tag where
+
+  type Client t m (Throwing es :> Verb method status ctypes a) tag =
+    Client t m (Verb method status ctypes (Envelope es a)) tag
+
+  clientWithRoute
+    :: Proxy (Throwing es :> Verb method status ctypes a)
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m (Verb method status ctypes (Envelope es a)) tag
+  clientWithRoute Proxy =
+    clientWithRoute (Proxy :: Proxy (Verb method status ctypes (Envelope es a)))
+
+-- | When 'NoThrow' comes before a 'Verb', change it into the same 'Verb'
+-- but returning an @'Envelope' \'[]@.
+instance (HasClient t m (Verb method status ctypes (Envelope '[] a)) tag) =>
+    HasClient t m (NoThrow :> Verb method status ctypes a) tag where
+
+  type Client t m (NoThrow :> Verb method status ctypes a) tag =
+    Client t m (Verb method status ctypes (Envelope '[] a)) tag
+
+  clientWithRoute
+    :: Proxy (NoThrow :> Verb method status ctypes a)
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m (Verb method status ctypes (Envelope '[] a)) tag
+  clientWithRoute Proxy =
+    clientWithRoute (Proxy :: Proxy (Verb method status ctypes (Envelope '[] a)))
+
+-- | When @'Throwing' es@ comes before ':<|>', push @'Throwing' es@ into each
+-- branch of the API.
+instance HasClient t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag =>
+    HasClient t m (Throwing es :> (api1 :<|> api2)) tag where
+
+  type Client t m (Throwing es :> (api1 :<|> api2)) tag =
+    Client t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag
+
+  clientWithRoute
+    :: Proxy (Throwing es :> (api1 :<|> api2))
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag
+  clientWithRoute _ =
+    clientWithRoute (Proxy :: Proxy ((Throwing es :> api1) :<|> (Throwing es :> api2)))
+
+-- | When 'NoThrow' comes before ':<|>', push 'NoThrow' into each branch of the
+-- API.
+instance HasClient t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag =>
+    HasClient t m (NoThrow :> (api1 :<|> api2)) tag where
+
+  type Client t m (NoThrow :> (api1 :<|> api2)) tag =
+    Client t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag
+
+  clientWithRoute
+    :: Proxy (NoThrow :> (api1 :<|> api2))
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag
+  clientWithRoute _ =
+    clientWithRoute (Proxy :: Proxy ((NoThrow :> api1) :<|> (NoThrow :> api2)))
+
+-- | When a @'Throws' e@ comes immediately after a @'Throwing' es@, 'Snoc' the
+-- @e@ onto the @es@. Otherwise, if @'Throws' e@ comes before any other
+-- combinator, push it down so it is closer to the 'Verb'.
+instance HasClient t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag =>
+    HasClient t m (Throwing es :> api :> apis) tag where
+
+  type Client t m (Throwing es :> api :> apis) tag =
+    Client t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag
+
+  clientWithRoute
+    :: Proxy (Throwing es :> api :> apis)
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag
+  clientWithRoute _ =
+    clientWithRoute (Proxy :: Proxy (ThrowingNonterminal (Throwing es :> api :> apis)))
+
+-- | When 'NoThrow' comes before any other combinator, push it down so it is
+-- closer to the 'Verb'.
+instance HasClient t m (api :> NoThrow :> apis) tag =>
+    HasClient t m (NoThrow :> api :> apis) tag where
+
+  type Client t m (NoThrow :> api :> apis) tag =
+    Client t m (api :> NoThrow :> apis) tag
+
+  clientWithRoute
+    :: Proxy (NoThrow :> api :> apis)
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m (api :> NoThrow :> apis) tag
+  clientWithRoute _ =
+    clientWithRoute (Proxy :: Proxy (api :> NoThrow :> apis))

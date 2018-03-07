@@ -390,7 +390,8 @@ evalResponse
     -> (tag, XhrResponse)
     -> ReqResult tag a
 evalResponse decodeRes (tag, xhr) =
-    let okStatus   = _xhrResponse_status xhr < 400
+    let status = _xhrResponse_status xhr
+        okStatus = status >= 200 && status < 400
         errMsg = fromMaybe
             ("Empty response with error code " <>
                 T.pack (show $ _xhrResponse_status xhr))

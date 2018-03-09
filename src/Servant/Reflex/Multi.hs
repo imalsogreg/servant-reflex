@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -37,46 +38,83 @@ module Servant.Reflex.Multi (
     ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative    (liftA2)
-import           Data.Functor.Compose   (Compose (..), getCompose)
-import           Data.Proxy             (Proxy (..))
-import qualified Data.Set               as Set
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import qualified Data.Text.Encoding     as E
-import           GHC.TypeLits           (KnownSymbol, symbolVal)
-import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
-                                         BasicAuthData, BuildHeadersTo (..),
-                                         Capture, Header, Headers (..),
-                                         HttpVersion, IsSecure, MimeRender (..),
-                                         NoContent, QueryFlag,
-                                         QueryParam, QueryParams, Raw,
-                                         ReflectMethod (..), RemoteHost,
-                                         ReqBody, ToHttpApiData (..), Vault,
-                                         Verb, contentType)
+import           Control.Applicative                             (liftA2)
+import           Data.Functor.Compose                            (Compose (..),
+                                                                  getCompose)
+import           Data.Proxy                                      (Proxy (..))
+import qualified Data.Set                                        as Set
+import           Data.Text                                       (Text)
+import qualified Data.Text                                       as T
+import qualified Data.Text.Encoding                              as E
+import           GHC.TypeLits                                    (KnownSymbol,
+                                                                  symbolVal)
+import           Servant.API                                     ((:<|>) (..),
+                                                                  (:>),
+                                                                  BasicAuth,
+                                                                  BasicAuthData,
+                                                                  BuildHeadersTo (..),
+                                                                  Capture,
+                                                                  Header,
+                                                                  Headers (..),
+                                                                  HttpVersion,
+                                                                  IsSecure,
+                                                                  NoContent,
+                                                                  QueryFlag,
+                                                                  QueryParam,
+                                                                  QueryParams,
+                                                                  Raw,
+                                                                  ReflectMethod (..),
+                                                                  RemoteHost,
+                                                                  ReqBody,
+                                                                  ToHttpApiData (..),
+                                                                  Vault, Verb,
+                                                                  contentType)
 
-import           Reflex.Dom.Core        (Dynamic, Event, Reflex,
-                                         XhrRequest (..),
-                                         XhrResponseHeaders (..),
-                                         attachPromptlyDynWith, constDyn)
+import           Reflex.Dom.Core                                 (Dynamic,
+                                                                  Event,
+                                                                  IsXhrPayload,
+                                                                  Reflex,
+                                                                  XhrRequest (..),
+                                                                  XhrResponseHeaders (..),
+                                                                  attachPromptlyDynWith,
+                                                                  constDyn)
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
-                                         SupportsServantReflex)
-import           Servant.Common.Req     (ClientOptions, MimeUnrender,
-                                         QParam (..), QueryPart (..), Req,
-                                         ReqResult (..), addHeader, authData,
-                                         defReq,
-                                         defaultClientOptions,
-                                         performRequestsCT,
-                                         performRequestsNoBody,
-                                         performSomeRequestsAsync,
-                                         prependToPathParts, qParamToQueryPart,
-                                         qParams, reqBody, reqFailure,
-                                         reqMethod, reqSuccess, reqSuccess',
-                                         respHeaders, response, withCredentials)
-import Servant.Checked.Exceptions.Internal.Envelope (Envelope)
-import Servant.Checked.Exceptions.Internal.Servant.API (NoThrow, Throws, Throwing, ThrowingNonterminal)
-import           Servant.Reflex         (BuildHeaderKeysTo (..), toHeaders)
+import           Servant.Checked.Exceptions.Internal.Envelope    (Envelope)
+import           Servant.Checked.Exceptions.Internal.Servant.API (NoThrow,
+                                                                  Throwing,
+                                                                  ThrowingNonterminal,
+                                                                  Throws)
+import           Servant.Common.BaseUrl                          (BaseUrl (..),
+                                                                  Scheme (..),
+                                                                  SupportsServantReflex)
+import           Servant.Common.Req                              (ClientOptions,
+                                                                  MimeUnrender,
+                                                                  QParam (..),
+                                                                  QueryPart (..),
+                                                                  Req (..),
+                                                                  ReqResult (..),
+                                                                  SomeXhrRequest (..),
+                                                                  addHeader,
+                                                                  authData,
+                                                                  defReq,
+                                                                  defaultClientOptions,
+                                                                  performRequestsCT,
+                                                                  performRequestsNoBody,
+                                                                  performSomeRequestsAsync,
+                                                                  prependToPathParts,
+                                                                  qParamToQueryPart,
+                                                                  qParams,
+                                                                  reqBody,
+                                                                  reqFailure,
+                                                                  reqMethod,
+                                                                  reqSuccess,
+                                                                  reqSuccess',
+                                                                  respHeaders,
+                                                                  response,
+                                                                  withCredentials)
+import           Servant.Reflex                                  (BuildHeaderKeysTo (..),
+                                                                  GHCJS'MimeRender (..),
+                                                                  toHeaders)
 
 
 ------------------------------------------------------------------------------
@@ -315,29 +353,31 @@ instance (SupportsServantReflex t m,
   clientWithRouteMulti _ _ _ _ _ _ opts rawReqs triggers = do
     let rawReqs' = sequence rawReqs :: Dynamic t (f (Either Text (XhrRequest ())))
         rawReqs'' = attachPromptlyDynWith (\fxhr t -> Compose (t, fxhr)) rawReqs' triggers
-    resps <- fmap (fmap aux . sequenceA . getCompose) <$> performSomeRequestsAsync opts rawReqs''
+        rawReqs''' = (fmap . fmap . fmap) (SomeXhrRequest . fmap Just) rawReqs''
+    resps <- fmap (fmap aux . sequenceA . getCompose) <$> performSomeRequestsAsync opts rawReqs'''
     return resps
     where
       aux (tag, Right r) = ResponseSuccess tag () r
       aux (tag, Left  e) = RequestFailure tag e
 
 
-instance (MimeRender ct a,
+instance (GHCJS'MimeRender ct a, IsXhrPayload (ToSend ct a), Show (ToSend ct a),
           HasClientMulti t m sublayout f tag,
           Reflex t,
           Applicative f)
       => HasClientMulti t m (ReqBody (ct ': cts) a :> sublayout) f tag where
 
   type ClientMulti t m (ReqBody (ct ': cts) a :> sublayout) f tag =
-    Dynamic t (f (Either Text a)) -> ClientMulti t m sublayout f tag
+    Dynamic t (f (Either Text (ToConvert ct a))) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl opts bodies =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl opts
-       where req'        b r = r { reqBody = bodyBytesCT (constDyn b) }
+       where req'        b Req{..} = Req { reqBody = bodyBytesCT (constDyn b), .. }
              ctProxy         = Proxy :: Proxy ct
+             atProxy         = Proxy :: Proxy a
              ctString        = T.pack $ show $ contentType ctProxy
              bodyBytesCT b   = Just $ (fmap . fmap)
-                               (\b' -> (mimeRender ctProxy b', ctString))
+                               (\b' -> (ghcjsMimeRender ctProxy atProxy b', ctString))
                                b
              reqs'           = liftA2 req' <$> bodies <*> reqs
 

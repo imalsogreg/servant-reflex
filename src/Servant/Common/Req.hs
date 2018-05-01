@@ -223,7 +223,7 @@ reqToReflexRequest reqMeth reqHost req =
                         Map.insert "Content-Type" bCT (Map.fromList hs)
                       , _xhrRequestConfig_user = Nothing
                       , _xhrRequestConfig_password = Nothing
-                      , _xhrRequestConfig_responseType = Nothing
+                      , _xhrRequestConfig_responseType = Just XhrResponseType_ArrayBuffer
                       , _xhrRequestConfig_withCredentials = False
                       , _xhrRequestConfig_responseHeaders = def
                       }
@@ -235,7 +235,7 @@ reqToReflexRequest reqMeth reqHost req =
                                Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
                                                        , _xhrRequestConfig_user = Nothing
                                                        , _xhrRequestConfig_password = Nothing
-                                                       , _xhrRequestConfig_responseType = Nothing
+                                                       , _xhrRequestConfig_responseType = Just XhrResponseType_ArrayBuffer
                                                        , _xhrRequestConfig_sendData = ""
                                                        , _xhrRequestConfig_withCredentials = False
                                                        }
@@ -344,15 +344,15 @@ performRequestsCT
     -> m (Event t (f (ReqResult tag a)))
 performRequestsCT ct reqMeth reqs reqHost opts trigger = do
   resps <- performRequests reqMeth reqs reqHost opts trigger
-  let decodeResp x = first T.pack .
-                     mimeUnrender ct .
-                     BL.fromStrict .
-                     TE.encodeUtf8 =<< note "No body text"
-                     (_xhrResponse_responseText x)
+  let decodeResp (Just (XhrResponseBody_ArrayBuffer x)) =
+                     first T.pack .
+                     mimeUnrender ct $
+                     BL.fromStrict x
+      decodeResp _ = Left "No body"
   return $ fmap
       (\(t,rs) -> ffor rs $ \r -> case r of
               Left e  -> RequestFailure t e
-              Right g -> evalResponse decodeResp (t,g)
+              Right g -> evalResponse (decodeResp . _xhrResponse_response) (t,g)
       )
       resps
 

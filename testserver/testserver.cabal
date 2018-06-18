@@ -21,6 +21,7 @@ executable back
   -- other-extensions:
   build-depends:       aeson >= 0.9 && < 1.4
                      , base >=4.8 && <4.11
+                     , directory >= 1.2 && < 1.4
                      , snap >= 1.0 && < 1.2
                      , snap-server  >= 1.0 && < 1.1
                      , snap-core  >= 1.0 && < 1.1

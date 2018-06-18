@@ -18,12 +18,12 @@ import           Data.Text                         hiding (head, length, map,
 import qualified Data.Text                         as T
 import qualified Data.Text.IO                      as T
 import           GHC.Generics
-import           Servant.Server.Internal.SnapShims
 import           Snap.Core
 import           Snap.Http.Server
 
 import           Servant
-import           Servant.Server
+import           Servant.Server ()
+import           System.Directory
 -- import           Snap.Util.FileServe
 import           API
 import           Snap
@@ -85,6 +85,8 @@ test = serveSnapWithContext testApi
 
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
+  liftIO $ print =<< listDirectory "."
+  liftIO $ print =<< listDirectory "static"
   addRoutes [("", test)
             ,("", serveDirectory "static")
             ]
@@ -92,4 +94,7 @@ initApp = makeSnaplet "myapp" "example" Nothing $ do
 
 -- Put this all to work!
 main :: IO ()
-main = serveSnaplet mempty initApp
+main = commandLineConfig emptyConfig >>= \cfg -> print cfg >> serveSnaplet cfg initApp
+-- main = serveSnaplet (defaultConfig { accessLog = "/tmp/log/testserver-access.log"
+--                                    , errorLog  = "/tmp/log/testserver-error.log"
+--                                    }) initApp

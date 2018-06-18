@@ -28,7 +28,7 @@ spec :: Spec
 spec = do
   describe "servant-reflex tests" $ do
 
-    session "test page" $ using Chrome $ do
+    session "test page" $ using [chromeCaps] $ do
 
       it "opens the page" $ runWD $
         openPage "http://localhost:8000"

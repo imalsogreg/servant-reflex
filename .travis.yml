@@ -1,53 +1,22 @@
-sudo: required
+language: nix
 
-before_cache:
-  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
-  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
-
-addons:
-  apt:
-    - phantomjs
-
-matrix:
-  include:
-    - env: CABALVER=1.24 GHCVER=7.10.3
-      compiler: ": #GHC 7.10.3"
-      addons: {apt: {packages: [cabal-install-1.24,ghc-7.10.3], sources: [hvr-ghc]}}
-    - env: CABALVER=1.24 GHCVER=8.0.1
-      compiler: ": #GHC 8.0.1"
-      addons: {apt: {packages: [cabal-install-1.24,ghc-8.0.1], sources: [hvr-ghc]}}
-
+cache: false
 
 
 before_install:
  - unset CC
- - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
- - git submodule update --init --recursive
 
 install:
- - cabal --version
- - BENCH=${BENCH---enable-benchmarks}
- - TEST=${TEST---enable-tests}
- - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
- - if [ -f $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz ];
-   then
-     zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz >
-          $HOME/.cabal/packages/hackage.haskell.org/00-index.tar;
-   fi
- - travis_retry cabal update -v
- - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
- - deps/reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal configure -fExample && cabal build"
- - deps/reflex-platform/work-on ghc ./testdriver --command "cd testdriver && cabal configure && cabal build"
- - cd testserver && dist/build/back/back -p 8000 &
- - sleep 3
- - phantomjs --webdriver=127.0.0.1:4444 &
- - sleep 3
 
 script:
+ - git clone https://github.com/reflex-frp/reflex-platform
+ - cd reflex-platform && sudo echo "Yes" | ./try-reflex --command "exit 0"
+ - strace nix build -f ../release.nix servant-reflex
+
+ - nix build -f ./release.nix servant-reflex --substituters https://cache.nixos.org --substituters https://nixcache.reflex-frp.org
+ - nix build -f ./release.nix testresults
  - git config --global user.email "travis-ci@example.com"
  - git config --global user.name "Travis-CI"
- - ./build.sh
- # - testdriver/dist/build/spec/spec
 
 cache:
   directories:

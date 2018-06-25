@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -25,7 +26,9 @@
 module Servant.Reflex
   ( client
   , clientWithOpts
+  , clientWithOptsAndResultHandler
   , clientWithRoute
+  , clientWithRouteAndResultHandler
   , BuildHeaderKeysTo(..)
   , toHeaders
   , HasClient
@@ -120,21 +123,53 @@ clientWithOpts
     -> Client t m layout tag
 clientWithOpts p q t baseurl = clientWithRoute p q t defReq baseurl
 
+-- | Like 'clientWithOpts' but allows passing a function which will process the
+-- result event in some way. This can be used to handle errors in a uniform way
+-- across call sites.
+clientWithOptsAndResultHandler
+    :: (HasClient t m layout tag)
+    => Proxy layout
+    -> Proxy m
+    -> Proxy tag
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
+    -> Client t m layout tag
+clientWithOptsAndResultHandler p q t = clientWithRouteAndResultHandler p q t defReq
+
 
 -- | This class lets us define how each API combinator
 -- influences the creation of an HTTP request. It's mostly
 -- an internal class, you can just use 'client'.
-class HasClient t m layout (tag :: *) where
+class Monad m => HasClient t m layout (tag :: *) where
   type Client t m layout tag :: *
-  clientWithRoute :: Proxy layout -> Proxy m -> Proxy tag -> Req t -> Dynamic t BaseUrl -> ClientOptions -> Client t m layout tag
+  clientWithRoute
+    :: Proxy layout
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> Client t m layout tag
+  clientWithRoute l m t r b o = clientWithRouteAndResultHandler l m t r b o return
+
+  clientWithRouteAndResultHandler
+    :: Proxy layout
+    -> Proxy m
+    -> Proxy tag
+    -> Req t
+    -> Dynamic t BaseUrl
+    -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
+    -> Client t m layout tag
 
 
 instance (HasClient t m a tag, HasClient t m b tag) => HasClient t m (a :<|> b) tag where
   type Client t m (a :<|> b) tag = Client t m a tag :<|> Client t m b tag
 
-  clientWithRoute Proxy q pTag req baseurl opts =
-    clientWithRoute (Proxy :: Proxy a) q pTag req baseurl opts :<|>
-    clientWithRoute (Proxy :: Proxy b) q pTag req baseurl opts
+  clientWithRouteAndResultHandler Proxy q pTag req baseurl opts wrap =
+    clientWithRouteAndResultHandler (Proxy :: Proxy a) q pTag req baseurl opts wrap :<|>
+    clientWithRouteAndResultHandler (Proxy :: Proxy b) q pTag req baseurl opts wrap
 
 
 -- Capture. Example:
@@ -155,11 +190,9 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
   type Client t m (Capture capture a :> sublayout) tag =
     Dynamic t (Either Text a) -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts val =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    q t
-                    (prependToPathParts p req)
-                    baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap val =
+    clientWithRouteAndResultHandler
+      (Proxy :: Proxy sublayout) q t (prependToPathParts p req) baseurl opts wrap
     where p = (fmap . fmap) (toUrlPiece) val
 
 
@@ -172,8 +205,8 @@ instance {-# OVERLAPPABLE #-}
     Event t tag -> m (Event t (ReqResult tag a))
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
-  clientWithRoute Proxy _ _ req baseurl opts trigs =
-      fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity $ req') baseurl opts trigs
+  clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
+      wrap =<< fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity $ req') baseurl opts trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
@@ -186,8 +219,8 @@ instance {-# OVERLAPPING #-}
     Event t tag -> m (Event t (ReqResult tag NoContent))
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
-  clientWithRoute Proxy _ _ req baseurl opts =
-    (fmap . fmap) runIdentity . performRequestsNoBody method (constDyn $ Identity req) baseurl opts
+  clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
+    wrap =<< fmap  runIdentity <$> performRequestsNoBody method (constDyn $ Identity req) baseurl opts trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 
@@ -223,10 +256,10 @@ instance {-# OVERLAPPABLE #-}
   ) => HasClient t m (Verb method status cts' (Headers ls a)) tag where
   type Client t m (Verb method status cts' (Headers ls a)) tag =
       Event t tag -> m (Event t (ReqResult tag (Headers ls a)))
-  clientWithRoute Proxy _ _ req baseurl opts trigs = do
+  clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
     resp <- fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl opts trigs
-    return $ toHeaders <$> resp
+    wrap $ toHeaders <$> resp
     where req' = req { respHeaders =
                        OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
@@ -239,10 +272,10 @@ instance {-# OVERLAPPABLE #-}
   ) => HasClient t m (Verb method status cts (Headers ls NoContent)) tag where
   type Client t m (Verb method status cts (Headers ls NoContent)) tag
     = Event t tag -> m (Event t (ReqResult tag (Headers ls NoContent)))
-  clientWithRoute Proxy _ _ req baseurl opts trigs = do
+  clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
     resp <- fmap runIdentity <$> performRequestsNoBody method (constDyn $ Identity req') baseurl opts trigs
-    return $ toHeaders <$> resp
+    wrap $ toHeaders <$> resp
     where req' = req {respHeaders =
                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
                      }
@@ -269,11 +302,11 @@ instance (KnownSymbol sym, ToHttpApiData a,
   type Client t m (Header sym a :> sublayout) tag =
     Dynamic t (Either Text a) -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts eVal =
-    clientWithRoute (Proxy :: Proxy sublayout)
-                    q t
-                    (Servant.Common.Req.addHeader hname eVal req)
-                    baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap eVal =
+    clientWithRouteAndResultHandler
+      (Proxy :: Proxy sublayout) q t
+      (Servant.Common.Req.addHeader hname eVal req)
+      baseurl opts wrap
     where hname = T.pack $ symbolVal (Proxy :: Proxy sym)
 
 
@@ -287,8 +320,8 @@ instance HasClient t m sublayout tag
   type Client t m (HttpVersion :> sublayout) tag =
     Client t m sublayout tag
 
-  clientWithRoute Proxy q t =
-    clientWithRoute (Proxy :: Proxy sublayout) q t
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout)
 
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,
@@ -324,9 +357,9 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
     Dynamic t (QParam a) -> Client t m sublayout tag
 
   -- if mparam = Nothing, we don't add it to the query string
-  clientWithRoute Proxy q t req baseurl opts mparam =
-    clientWithRoute (Proxy :: Proxy sublayout) q t
-      (req {qParams = paramPair : qParams req}) baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap mparam =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t
+      (req {qParams = paramPair : qParams req}) baseurl opts wrap
 
     where pname = symbolVal (Proxy :: Proxy sym)
           --p prm = QueryPartParam $ (fmap . fmap) (toQueryParam) prm
@@ -370,8 +403,8 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
   type Client t m (QueryParams sym a :> sublayout) tag =
     Dynamic t [a] -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts paramlist =
-    clientWithRoute (Proxy :: Proxy sublayout) q t req' baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap paramlist =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
 
       where req'    = req { qParams =  (T.pack pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
@@ -410,8 +443,8 @@ instance (KnownSymbol sym, HasClient t m sublayout tag, Reflex t)
   type Client t m (QueryFlag sym :> sublayout) tag =
     Dynamic t Bool -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts flag =
-    clientWithRoute (Proxy :: Proxy sublayout) q t req' baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap flag =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
 
     where req'     = req { qParams = thisPair : qParams req }
           thisPair = (T.pack pName, QueryPartFlag flag) :: (Text, QueryPart t)
@@ -425,7 +458,7 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
                       -> Event t tag
                       -> m (Event t (ReqResult tag ()))
 
-  clientWithRoute _ _ _ _ baseurl _ xhrs triggers = do
+  clientWithRouteAndResultHandler _ _ _ _ baseurl _ wrap xhrs triggers = do
 
     let xhrs'   = liftA2 (\x path -> case x of
                              Left e -> Left e
@@ -436,7 +469,7 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
         okReq  = fmapMaybe (\(t,x) -> either (const Nothing) (Just . (t,)) x) xhrs'' :: Event t (tag, XhrRequest ())
 
     resps  <- performRequestsAsync okReq
-    return $ leftmost [ uncurry RequestFailure <$> badReq
+    wrap $ leftmost [ uncurry RequestFailure <$> badReq
                       , evalResponse (const $ Right ()) <$> resps
                       ]
 
@@ -467,8 +500,8 @@ instance (MimeRender ct a, HasClient t m sublayout tag, Reflex t)
   type Client t m (ReqBody (ct ': cts) a :> sublayout) tag =
     Dynamic t (Either Text a) -> Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts body =
-    clientWithRoute (Proxy :: Proxy sublayout) q t req' baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap body =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
        where req'        = req { reqBody = bodyBytesCT }
              ctProxy     = Proxy :: Proxy ct
              ctString    = T.pack $ show $ contentType ctProxy
@@ -482,9 +515,9 @@ instance (MimeRender ct a, HasClient t m sublayout tag, Reflex t)
 instance (KnownSymbol path, HasClient t m sublayout tag, Reflex t) => HasClient t m (path :> sublayout) tag where
   type Client t m (path :> sublayout) tag = Client t m sublayout tag
 
-  clientWithRoute Proxy q t req baseurl opts =
-     clientWithRoute (Proxy :: Proxy sublayout) q t
-                     (prependToPathParts (pure (Right $ T.pack p)) req) baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap =
+     clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t
+                     (prependToPathParts (pure (Right $ T.pack p)) req) baseurl opts wrap
 
     where p = symbolVal (Proxy :: Proxy path)
 
@@ -492,23 +525,23 @@ instance (KnownSymbol path, HasClient t m sublayout tag, Reflex t) => HasClient 
 instance HasClient t m api tag => HasClient t m (Vault :> api) tag where
   type Client t m (Vault :> api) tag = Client t m api tag
 
-  clientWithRoute Proxy q t req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q t req baseurl
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy api)
 
 
 instance HasClient t m api tag => HasClient t m (RemoteHost :> api) tag where
   type Client t m (RemoteHost :> api) tag = Client t m api tag
 
-  clientWithRoute Proxy q t req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q t req baseurl
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy api)
 
 
 
 instance HasClient t m api tag => HasClient t m (IsSecure :> api) tag where
   type Client t m (IsSecure :> api) tag = Client t m api tag
 
-  clientWithRoute Proxy q t req baseurl =
-    clientWithRoute (Proxy :: Proxy api) q t req baseurl
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy api)
 
 
 instance (HasClient t m api tag, Reflex t)
@@ -517,8 +550,8 @@ instance (HasClient t m api tag, Reflex t)
   type Client t m (BasicAuth realm usr :> api) tag = Dynamic t (Maybe BasicAuthData)
                                                -> Client t m api tag
 
-  clientWithRoute Proxy q t req baseurl opts authdata =
-    clientWithRoute (Proxy :: Proxy api) q t req' baseurl opts
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap authdata =
+    clientWithRouteAndResultHandler (Proxy :: Proxy api) q t req' baseurl opts wrap
       where
         req'    = req { authData = Just authdata }
 
@@ -561,7 +594,7 @@ for empty and one for non-empty lists).
 instance (HasCookieAuth auths, HasClient t m api tag) => HasClient t m (Auth.Auth auths a :> api) tag where
 
   type Client t m (Auth.Auth auths a :> api) tag = Client t m api tag
-  clientWithRoute Proxy = clientWithRoute (Proxy :: Proxy api)
+  clientWithRouteAndResultHandler Proxy = clientWithRouteAndResultHandler (Proxy :: Proxy api)
 
 
 type family HasCookieAuth xs :: Constraint where

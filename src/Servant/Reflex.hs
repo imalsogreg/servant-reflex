@@ -611,18 +611,19 @@ class CookieAuthNotEnabled
 -}
 
 -- | Change a 'Throws' into 'Throwing'.
-instance (HasClient t m (Throwing '[e] :> api) tag) => HasClient t m (Throws e :> api) tag where
+instance (Monad m, HasClient t m (Throwing '[e] :> api) tag) => HasClient t m (Throws e :> api) tag where
   type Client t m (Throws e :> api) tag = Client t m (Throwing '[e] :> api) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (Throws e :> api)
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
     -> Client t m (Throwing '[e] :> api) tag
-  clientWithRoute _ = clientWithRoute (Proxy :: Proxy (Throwing '[e] :> api))
+  clientWithRouteAndResultHandler _ = clientWithRouteAndResultHandler (Proxy :: Proxy (Throwing '[e] :> api))
 
 -- | When @'Throwing' es@ comes before a 'Verb', change it into the same 'Verb'
 -- but returning an @'Envelope' es@.
@@ -632,110 +633,116 @@ instance (HasClient t m (Verb method status ctypes (Envelope es a)) tag) =>
   type Client t m (Throwing es :> Verb method status ctypes a) tag =
     Client t m (Verb method status ctypes (Envelope es a)) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (Throwing es :> Verb method status ctypes a)
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall x. Event t (ReqResult tag x) -> m (Event t (ReqResult tag x)))
     -> Client t m (Verb method status ctypes (Envelope es a)) tag
-  clientWithRoute Proxy =
-    clientWithRoute (Proxy :: Proxy (Verb method status ctypes (Envelope es a)))
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy (Verb method status ctypes (Envelope es a)))
 
 -- | When 'NoThrow' comes before a 'Verb', change it into the same 'Verb'
 -- but returning an @'Envelope' \'[]@.
-instance (HasClient t m (Verb method status ctypes (Envelope '[] a)) tag) =>
+instance (Monad m, HasClient t m (Verb method status ctypes (Envelope '[] a)) tag) =>
     HasClient t m (NoThrow :> Verb method status ctypes a) tag where
 
   type Client t m (NoThrow :> Verb method status ctypes a) tag =
     Client t m (Verb method status ctypes (Envelope '[] a)) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (NoThrow :> Verb method status ctypes a)
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall x. Event t (ReqResult tag x) -> m (Event t (ReqResult tag x)))
     -> Client t m (Verb method status ctypes (Envelope '[] a)) tag
-  clientWithRoute Proxy =
-    clientWithRoute (Proxy :: Proxy (Verb method status ctypes (Envelope '[] a)))
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy (Verb method status ctypes (Envelope '[] a)))
 
 -- | When @'Throwing' es@ comes before ':<|>', push @'Throwing' es@ into each
 -- branch of the API.
-instance HasClient t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag =>
+instance (Monad m, HasClient t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag) =>
     HasClient t m (Throwing es :> (api1 :<|> api2)) tag where
 
   type Client t m (Throwing es :> (api1 :<|> api2)) tag =
     Client t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (Throwing es :> (api1 :<|> api2))
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
     -> Client t m ((Throwing es :> api1) :<|> (Throwing es :> api2)) tag
-  clientWithRoute _ =
-    clientWithRoute (Proxy :: Proxy ((Throwing es :> api1) :<|> (Throwing es :> api2)))
+  clientWithRouteAndResultHandler _ =
+    clientWithRouteAndResultHandler (Proxy :: Proxy ((Throwing es :> api1) :<|> (Throwing es :> api2)))
 
 -- | When 'NoThrow' comes before ':<|>', push 'NoThrow' into each branch of the
 -- API.
-instance HasClient t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag =>
+instance (Monad m, HasClient t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag) =>
     HasClient t m (NoThrow :> (api1 :<|> api2)) tag where
 
   type Client t m (NoThrow :> (api1 :<|> api2)) tag =
     Client t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (NoThrow :> (api1 :<|> api2))
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
     -> Client t m ((NoThrow :> api1) :<|> (NoThrow :> api2)) tag
-  clientWithRoute _ =
-    clientWithRoute (Proxy :: Proxy ((NoThrow :> api1) :<|> (NoThrow :> api2)))
+  clientWithRouteAndResultHandler _ =
+    clientWithRouteAndResultHandler (Proxy :: Proxy ((NoThrow :> api1) :<|> (NoThrow :> api2)))
 
 -- | When a @'Throws' e@ comes immediately after a @'Throwing' es@, 'Snoc' the
 -- @e@ onto the @es@. Otherwise, if @'Throws' e@ comes before any other
 -- combinator, push it down so it is closer to the 'Verb'.
-instance HasClient t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag =>
+instance (Monad m, HasClient t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag) =>
     HasClient t m (Throwing es :> api :> apis) tag where
 
   type Client t m (Throwing es :> api :> apis) tag =
     Client t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (Throwing es :> api :> apis)
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
     -> Client t m (ThrowingNonterminal (Throwing es :> api :> apis)) tag
-  clientWithRoute _ =
-    clientWithRoute (Proxy :: Proxy (ThrowingNonterminal (Throwing es :> api :> apis)))
+  clientWithRouteAndResultHandler _ =
+    clientWithRouteAndResultHandler (Proxy :: Proxy (ThrowingNonterminal (Throwing es :> api :> apis)))
 
 -- | When 'NoThrow' comes before any other combinator, push it down so it is
 -- closer to the 'Verb'.
-instance HasClient t m (api :> NoThrow :> apis) tag =>
+instance (Monad m, HasClient t m (api :> NoThrow :> apis) tag) =>
     HasClient t m (NoThrow :> api :> apis) tag where
 
   type Client t m (NoThrow :> api :> apis) tag =
     Client t m (api :> NoThrow :> apis) tag
 
-  clientWithRoute
+  clientWithRouteAndResultHandler
     :: Proxy (NoThrow :> api :> apis)
     -> Proxy m
     -> Proxy tag
     -> Req t
     -> Dynamic t BaseUrl
     -> ClientOptions
+    -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))
     -> Client t m (api :> NoThrow :> apis) tag
-  clientWithRoute _ =
-    clientWithRoute (Proxy :: Proxy (api :> NoThrow :> apis))
+  clientWithRouteAndResultHandler _ =
+    clientWithRouteAndResultHandler (Proxy :: Proxy (api :> NoThrow :> apis))
 

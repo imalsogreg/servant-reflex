@@ -35,7 +35,7 @@ library
     exceptions          >= 0.8  && < 0.9,
     ghcjs-dom           >= 0.2  && < 0.10,
     http-api-data       >= 0.3.6 && < 0.4,
-    http-media          >= 0.6  && < 0.7,
+    http-media          >= 0.6  && < 0.8,
     jsaddle             >= 0.8  && < 0.10,
     mtl                 >= 2.2.1 && < 2.3,
     network-uri         >= 2.6  && < 2.7,

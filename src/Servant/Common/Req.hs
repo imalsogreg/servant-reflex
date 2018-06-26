@@ -1,56 +1,65 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE FunctionalDependencies    #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances     #-}
 module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
-import           Control.Applicative        (liftA2, liftA3)
+import           Control.Applicative               (liftA2, liftA3)
 import           Control.Concurrent
-import           Control.Monad              (join)
-import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Control.Monad                     (join)
+import           Control.Monad.IO.Class            (MonadIO, liftIO)
 import           Data.Aeson
-import           Data.Bifunctor             (first)
-import qualified Data.ByteString.Builder    as BB
-import qualified Data.ByteString            as BS
-import           Data.ByteString.Lazy       (ByteString)
-import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.Map                   as Map
-import           Data.Maybe                 (catMaybes, fromMaybe)
+import           Data.Bifunctor                    (first)
+import qualified Data.ByteString                   as BS
+import qualified Data.ByteString.Builder           as BB
+import           Data.ByteString.Lazy              (ByteString)
+import qualified Data.ByteString.Lazy.Char8        as BL
 import           Data.Functor.Compose
-import           Data.Monoid                ((<>))
-import           Data.Proxy                 (Proxy(..))
-import           Data.Text                  (Text)
-import qualified Data.Text                  as T
-import qualified Data.Text.Lazy             as TL
-import qualified Data.Text.Encoding         as T
-import           Data.Traversable           (forM)
+import qualified Data.JSString.Text                as JS (lazyTextFromJSString)
+import qualified Data.Map                          as Map
+import           Data.Maybe                        (catMaybes, fromMaybe)
+import           Data.Monoid                       ((<>))
+import           Data.Proxy                        (Proxy (..))
+import           Data.Text                         (Text)
+import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                as T
+import qualified Data.Text.Lazy                    as TL
+import           Data.Traversable                  (forM)
+import qualified Language.Javascript.JSaddle       as JS
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
-import qualified Language.Javascript.JSaddle as JS
-import qualified Data.JSString.Text         as JS (lazyTextFromJSString)
-import qualified Network.URI                as N
-import           Reflex.Dom.Core                 hiding (tag)
-import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
-                                             SupportsServantReflex)
-import           Servant.API.ContentTypes   ( NoContent(..), Accept, JSON
-                                            , OctetStream, PlainText
-                                            , FormUrlEncoded)
-import           Web.HttpApiData            (ToHttpApiData(..))
-import           Web.FormUrlEncoded         (FromForm, urlDecodeAsForm)
+import qualified Network.URI                       as N
+import           Reflex.Dom.Core                   hiding (tag)
+import           Servant.API.ContentTypes          (Accept, FormUrlEncoded,
+                                                    JSON, NoContent (..),
+                                                    OctetStream, PlainText)
+import           Servant.Common.BaseUrl            (BaseUrl,
+                                                    SupportsServantReflex,
+                                                    showBaseUrl)
+import           Web.FormUrlEncoded                (FromForm, urlDecodeAsForm)
+import           Web.HttpApiData                   (ToHttpApiData (..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
 -------------------------------------------------------------------------------
 
+-- #ifndef __GHCJS__
+-- jsonDecode :: JS.JSString -> Maybe a
+-- jsonDecode = error "jsonDecode is only available in GHCJS"
+-- #endif
 
-------------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 -- | The result of a request event
 data ReqResult tag a
     = ResponseSuccess tag a XhrResponse
@@ -144,18 +153,20 @@ data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
 -------------------------------------------------------------------------------
 -- The data structure used to build up request information while traversing
 -- the shape of a servant API
-data Req t = Req
+data Req t = forall o. (IsXhrPayload o, Show o) => Req
   { reqMethod    :: Text
   , reqPathParts :: [Dynamic t (Either Text Text)]
   , qParams      :: [(Text, QueryPart t)]
-  , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
+  , reqBody      :: Maybe (Dynamic t (Either Text (o, Text)))
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
   }
 
+data SomeXhrRequest = forall o. (IsXhrPayload o, Show o) => SomeXhrRequest (XhrRequest (Maybe o))
+
 defReq :: Req t
-defReq = Req "GET" [] [] Nothing [] def Nothing
+defReq = Req "GET" [] [] (Nothing :: Maybe (Dynamic t (Either Text ((), Text)))) [] def Nothing
 
 prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
@@ -164,14 +175,13 @@ prependToPathParts p req =
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
 addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . toHeader) val) : headers req }
 
-
 reqToReflexRequest
-    :: forall t. Reflex t
-    => Text
-    -> Dynamic t BaseUrl
-    -> Req t
-    -> Dynamic t (Either Text (XhrRequest XhrPayload))
-reqToReflexRequest reqMeth reqHost req =
+      :: forall t. Reflex t
+      => Text
+      -> Dynamic t BaseUrl
+      -> Req t
+      -> Dynamic t (Either Text SomeXhrRequest)
+reqToReflexRequest reqMeth reqHost req@(Req _ _ _ (reqBody :: Maybe (Dynamic t (Either Text (o, Text)))) _ _ _) =
   let t :: Dynamic t [Either Text Text]
       t = sequence $ reverse $ reqPathParts req
 
@@ -223,14 +233,14 @@ reqToReflexRequest reqMeth reqHost req =
                 fmap (fmap (\rightVal -> (headerName, rightVal))) dynam
 
       mkConfigBody :: Either Text [(Text,Text)]
-                   -> (Either Text (BL.ByteString, Text))
-                   -> Either Text (XhrRequestConfig XhrPayload)
+                   -> (Either Text (o, Text))
+                   -> Either Text (XhrRequestConfig (Maybe o))
       mkConfigBody ehs rb = case (ehs, rb) of
                   (_, Left e)                     -> Left e
                   (Left e, _)                     -> Left e
                   (Right hs, Right (bBytes, bCT)) ->
                     Right $ XhrRequestConfig
-                      { _xhrRequestConfig_sendData = bytesToPayload bBytes
+                      { _xhrRequestConfig_sendData = Just bBytes
                       , _xhrRequestConfig_headers  =
                         Map.insert "Content-Type" bCT (Map.fromList hs)
                       , _xhrRequestConfig_user = Nothing
@@ -240,16 +250,16 @@ reqToReflexRequest reqMeth reqHost req =
                       , _xhrRequestConfig_responseHeaders = def
                       }
 
-      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig XhrPayload))
-      xhrOpts = case reqBody req of
+      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig (Maybe o)))
+      xhrOpts = case reqBody of
         Nothing    -> ffor xhrHeaders $ \case
                                Left e -> Left e
                                Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
                                                        , _xhrRequestConfig_user = Nothing
                                                        , _xhrRequestConfig_password = Nothing
                                                        , _xhrRequestConfig_responseType = Nothing
-                                                       , _xhrRequestConfig_sendData = ""
                                                        , _xhrRequestConfig_withCredentials = False
+                                                       , _xhrRequestConfig_sendData = Nothing
                                                        }
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
 
@@ -263,10 +273,10 @@ reqToReflexRequest reqMeth reqHost req =
       addAuth :: Dynamic t (Either Text (XhrRequestConfig x))
               -> Dynamic t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
-        Nothing -> xhr
+        Nothing   -> xhr
         Just auth -> liftA2 mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (\p opt -> SomeXhrRequest $ XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 
   in xhrReq
 
@@ -275,8 +285,14 @@ reqToReflexRequest reqMeth reqHost req =
 displayHttpRequest :: Text -> Text
 displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 
+instance IsXhrPayload o => IsXhrPayload (Maybe o) where
+  sendXhrPayload xhr = maybe (sendXhrPayload xhr ()) (sendXhrPayload xhr)
+
+instance (IsXhrPayload o, IsXhrPayload o') => IsXhrPayload (Either o o') where
+  sendXhrPayload xhr = either (sendXhrPayload xhr) (sendXhrPayload xhr)
+
 -- | This function performs the request
-performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
+performRequests :: forall t m f tag. (SupportsServantReflex t m, Traversable f)
                 => Text
                 -> Dynamic t (f (Req t))
                 -> Dynamic t BaseUrl
@@ -289,6 +305,7 @@ performRequests reqMeth rs reqHost opts trigger = do
                      reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
 
       -- xhrReqs = fmap snd <$> xhrReqsAndDebugs
+      reqs :: Event t (Compose ((,) tag) f (Either Text SomeXhrRequest))
       reqs    = attachPromptlyDynWith
                 (\fxhr t -> Compose (t, fxhr)) xhrReqs trigger
 
@@ -304,43 +321,37 @@ performSomeRequestsAsync
         HasWebView (Performable m),
         PerformEvent t m,
         TriggerEvent t m,
-        Traversable f,
-        IsXhrPayload a,
-        Show a
+        Traversable f
        )
     => ClientOptions
-    -> Event t (f (Either Text (XhrRequest a)))
+    -> Event t (f (Either Text SomeXhrRequest))
     -> m (Event t (f (Either Text XhrResponse)))
-performSomeRequestsAsync opts =
-    performSomeRequestsAsync' opts newXMLHttpRequest . fmap return
+performSomeRequestsAsync opts sxhr =
+    performSomeRequestsAsync' opts newXMLHttpRequest $ return <$> sxhr
 
 
 ------------------------------------------------------------------------------
 -- | A modified version or Reflex.Dom.Xhr.performRequestsAsync
 -- that accepts 'f (Either e (XhrRequestb))' events
 performSomeRequestsAsync'
-    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f, Show b)
+    :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f)
     => ClientOptions
-    -> (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
-    -> Event t (Performable m (f (Either Text (XhrRequest b)))) -> m (Event t (f (Either Text a)))
+    -> (forall b. IsXhrPayload b => XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest)
+    -> Event t (Performable m (f (Either Text SomeXhrRequest)))
+    -> m (Event t (f (Either Text a)))
 performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
   rs <- hrs
   resps <- forM rs $ \r -> case r of
       Left e -> do
           resp <- liftIO $ newMVar (Left e)
           return resp
-      Right r' -> do
+      Right (SomeXhrRequest r') -> do
           resp <- liftIO newEmptyMVar
           r'' <- liftJSM $ (optsRequestFixup opts) r'
           _ <- newXhr r'' $ liftIO . putMVar resp . Right
           return resp
   _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar
   return ()
-
-
-type XhrPayload = T.Text
-bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = T.decodeUtf8 . BL.toStrict
 
 
 performRequestsCT

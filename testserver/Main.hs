@@ -49,7 +49,7 @@ data App = App
 --
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API '[BasicAuthCheck (Handler App App) ()] (Handler App App)
-server = return () :<|> return 100 :<|> sayhi :<|> dbl
+server = return () :<|> return 100 :<|> dblint :<|> sayhi :<|> dbl
     :<|> multi :<|> qna :<|> serveSecret
     :<|> serveDirectory "static"
   where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
@@ -63,6 +63,7 @@ server = return () :<|> return 100 :<|> sayhi :<|> dbl
                  | otherwise             = T.intercalate ", " (L.init greetings)
                                        <> ", and " <> L.last greetings <> ", "
            return . modifier $ greetPart <> n
+        dblint = return . (* 2)
         dbl x = if x `elem` [4,13]
                 then throwError $ err500 { errBody = "No unlucky numbers please" }
                 else return $ x * 2

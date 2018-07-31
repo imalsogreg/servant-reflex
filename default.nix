@@ -1,5 +1,5 @@
 { mkDerivation, aeson, base, bytestring, case-insensitive
-, containers, data-default, exceptions, ghcjs-dom, http-api-data
+, containers, data-default, exceptions, generic-lens, ghcjs-dom, http-api-data
 , http-media, jsaddle, mtl, network-uri, reflex, reflex-dom
 , reflex-dom-core, safe, scientific, servant, servant-auth, stdenv
 , string-conversions, text, transformers
@@ -22,7 +22,7 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base bytestring case-insensitive containers data-default exceptions
-    ghcjs-dom http-api-data http-media jsaddle mtl network-uri reflex
+    generic-lens ghcjs-dom http-api-data http-media jsaddle mtl network-uri reflex
     reflex-dom-core safe servant servant-auth string-conversions text
     transformers
   ];

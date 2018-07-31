@@ -4,6 +4,6 @@
 import (fetchFromGitHub {
     owner = "reflex-frp";
     repo = "reflex-platform";
-    rev = "a4d679629b52f80ecae857864591d79d902a5c5d";
-    sha256 = "1p34qc3ryar81jh01g4jm0svr05yri83vlswm2jbxiabigy47652";
-  }) {}
+    rev = "04aa7c00d79a2fac81f5b302b919e1b630c20e7f";
+    sha256 = "1ckz07a839h3f8k94x2ybi9c89hqbkwnn1zxjxb0bfim8f2wqar7";
+  }) { }

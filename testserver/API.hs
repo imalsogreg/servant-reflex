@@ -31,6 +31,7 @@ instance FromJSON Answer where
 -- | API spec for server, client, and docs
 type API = "getunit" :> Get '[JSON] ()
       :<|> "getint"  :> Get '[JSON] Int
+      :<|> "dblint"  :> Capture "anint" Int :> Get '[JSON] Int
       :<|> "sayhi"   :> QueryParam  "username" Text
                      :> QueryParams "greetings" Text
                      :> QueryFlag   "gusto"

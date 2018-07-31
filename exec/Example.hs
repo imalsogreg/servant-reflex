@@ -5,6 +5,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecursiveDo         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Main where
 
@@ -25,15 +27,59 @@ import Reflex.Dom hiding (run)
 ------------------------------------------------------------------------------
 import Servant.Reflex
 import Servant.Reflex.Multi
+import qualified Servant.Reflex.RequestAPI as SR
 
 
 api :: Proxy API
 api = Proxy
 
+type MyAPI =
+  "getunit" :> Get '[JSON] ()
+      :<|> "getint"  :> Get '[JSON] Int
+      :<|> "dblint"  :> Capture "anint" Int :> Get '[JSON] Int
+      :<|> "sayhi"   :> QueryParam  "username" Text
+                     :> QueryParams "greetings" Text
+                     :> QueryFlag   "gusto"
+                     :> Get '[JSON] Text
+      :<|> "double" :> ReqBody '[JSON] Double
+                    :> Post '[JSON] Double
+      :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] Text
+      :<|> "qna" :> ReqBody '[JSON] Question
+                 :> Post '[JSON] Answer
+      :<|> "secret" :> BasicAuth "realm" () :> Get '[JSON] Int
+
 main :: IO ()
 main = mainWidget $ do
+    divClass "example-base" runTuple
     divClass "example-base" run
     divClass "example-multi" runMulti
+
+runTuple :: forall t m. (SupportsServantReflex t m,
+                         DomBuilder t m,
+                         DomBuilderSpace m ~ GhcjsDomSpace,
+                         MonadFix m,
+                         PostBuild t m,
+                         MonadHold t m) => m ()
+runTuple = do
+  -- el "h1" (text "Tuple API")
+  url <- baseUrlWidget
+  -- let (getUnit :<|> getInt :<|> dblint :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _ ) =
+  --         SR.clientR (Proxy @(SR.Seal API)) (Proxy :: Proxy m) (Proxy :: Proxy t) (Proxy :: Proxy []) (Proxy :: Proxy Int) url
+
+  -- let (getUnit :<|> getInt :<|> dblint :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _) =
+  let (r1 :<|> r2 :<|> r3 :<|> r4 :<|> r5 :<|> r6 :<|> r7 :<|> r8) =
+        SR.clientR (Proxy @MyAPI) (Proxy @m) (Proxy @t) (Proxy @[]) (Proxy @Int) url
+
+  -- let (getUnit :<|> getInt :<|> dblint :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _) =
+  --         SR.clientR (Proxy @(API)) (Proxy :: Proxy m) (Proxy :: Proxy t) (Proxy :: Proxy []) (Proxy :: Proxy Int) url
+
+  -- unitBtn <- button "get unit"
+  -- intBtn  <- button "get int"
+  inp <- fmap (readMaybe @Int . T.unpack) . value <$> textInput def
+
+  rs <- r3 (fmap (:[]) (fmapMaybe id $ updated inp))
+  -- display =<< holdDyn "Waiting" (T.pack . show <$> rs)
+  return ()
 
 
 runMulti :: forall t m. (SupportsServantReflex t m,
@@ -45,7 +91,7 @@ runMulti :: forall t m. (SupportsServantReflex t m,
 runMulti = do
     url <- baseUrlWidget
     el "br" blank
-    let (_ :<|> _ :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _ ) =
+    let (_ :<|> _ :<|> _ :<|> sayHi :<|> dbl :<|> _ :<|> _ :<|> _ :<|> _ ) =
             clientA api (Proxy :: Proxy m) (Proxy :: Proxy []) (Proxy :: Proxy Int) url
 
     num :: Dynamic t (Either Text Double) <- fmap (note "No read" . readMaybe . T.unpack) . value <$> textInput def
@@ -97,9 +143,9 @@ run = mdo
 
   -- Name the computed API client functions
   let tweakRequest = ClientOptions $ \r -> do
-          putStrLn ("Got req: " ++ show r)
+          -- putStrLn ("Got req: " ++ show r)
           return $ r & withCredentials .~ True
-  let (getUnit :<|> getInt :<|> sayhi :<|> dbl
+  let (getUnit :<|> getInt :<|> dblInt :<|> sayhi :<|> dbl
        :<|> multi :<|> qna :<|> secret :<|> doRaw) =
         clientWithOpts api (Proxy :: Proxy m) (Proxy :: Proxy Int) url tweakRequest
 

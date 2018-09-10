@@ -40,7 +40,9 @@ type API = "getunit" :> Get '[JSON] ()
                     :> Post '[JSON] Double
       :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] Text
       :<|> "qna" :> ReqBody '[JSON] Question
-                 :> Post '[JSON] Answer
+                 :> Header "qnum" Int
+                 :> Header "is-favorite" Bool
+                 :> Post '[JSON] (Headers '[Header "anum" Int, Header "was-favorite" Bool] Answer)
       :<|> "secret" :> BasicAuth "realm" () :> Get '[JSON] Int
       :<|> Raw
 

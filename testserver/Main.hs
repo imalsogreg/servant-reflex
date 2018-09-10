@@ -11,6 +11,7 @@ import           Data.Aeson
 import           Data.Bool
 import           Data.Char                         (toUpper)
 import qualified Data.List                         as L
+import           Data.Maybe                        (fromMaybe)
 import           Data.Monoid
 import           Data.Proxy
 import           Data.Text                         hiding (head, length, map,
@@ -18,7 +19,7 @@ import           Data.Text                         hiding (head, length, map,
 import qualified Data.Text                         as T
 import qualified Data.Text.IO                      as T
 import           GHC.Generics
-import           Snap.Core
+import           Snap.Core                         hiding (addHeader)
 import           Snap.Http.Server
 
 import           Servant
@@ -26,7 +27,7 @@ import           Servant.Server ()
 import           System.Directory
 -- import           Snap.Util.FileServe
 import           API
-import           Snap
+import           Snap                              hiding (addHeader)
 
 -- * Example
 
@@ -50,8 +51,7 @@ data App = App
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API '[BasicAuthCheck (Handler App App) ()] (Handler App App)
 server = return () :<|> return 100 :<|> dblint :<|> sayhi :<|> dbl
-    :<|> multi :<|> qna :<|> serveSecret
-    :<|> serveDirectory "static"
+    :<|> multi :<|> qna :<|> serveSecret :<|> serveDirectory "static"
   where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
         sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: Text)
@@ -68,11 +68,11 @@ server = return () :<|> return 100 :<|> dblint :<|> sayhi :<|> dbl
                 then throwError $ err500 { errBody = "No unlucky numbers please" }
                 else return $ x * 2
         multi = return . bool "Box unchecked" "Box Checked"
-        qna q = do
+        qna q nm fav = do
           liftIO $ do
             putStrLn $ "qna got: " ++ show q
             T.putStrLn $ unQuestion q
-          return $ Answer $ unQuestion q
+          return $ addHeader (fromMaybe 10 nm) $ addHeader (fromMaybe False fav) $ (Answer $ unQuestion q)
         serveSecret _ = do
           req <- getRequest
           liftIO $ putStrLn (show req)

@@ -1,1 +1,1 @@
-(import ../release2.nix {}).testserver.env
+(import ../release.nix {}).testserver.env

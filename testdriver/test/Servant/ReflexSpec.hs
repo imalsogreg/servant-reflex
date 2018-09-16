@@ -9,6 +9,7 @@ import qualified Data.Text as T
 import Data.Foldable
 import Test.WebDriver.Commands.Wait
 import Test.Hspec.WebDriver
+import Test.Hspec.WebDriver (chromeCaps)
 
 
 clickingShouldCause :: Selector -> Selector -> Double -> (Element -> Element -> WD Bool) -> WD ()
@@ -28,7 +29,7 @@ spec :: Spec
 spec = do
   describe "servant-reflex tests" $ do
 
-    session "test page" $ using Chrome $ do
+    session "test page" $ using [chromeCaps] $ do
 
       it "opens the page" $ runWD $
         openPage "http://localhost:8000"

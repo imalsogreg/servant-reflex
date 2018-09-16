@@ -10,4 +10,6 @@ before_script:
   - git config --global user.name "Travis-CI"
 
 script:
-  - nix-build travis.nix -A example
+  - nix-build travis.nix -A build
+  - nix-build travis.nix -A testserver
+  - nix-build travis.nix -A testresults

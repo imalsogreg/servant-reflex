@@ -97,7 +97,6 @@ run = mdo
 
   -- Name the computed API client functions
   let tweakRequest = ClientOptions $ \r -> do
-          putStrLn ("Got req: " ++ show r)
           return $ r & withCredentials .~ True
   let (getUnit :<|> getInt :<|> sayhi :<|> dbl
        :<|> multi :<|> qna :<|> secret :<|> doRaw) =

@@ -1,0 +1,36 @@
+diff --git a/Test/Hspec/WebDriver.hs b/Test/Hspec/WebDriver.hs
+index 3162656..313360c 100644
+--- a/Test/Hspec/WebDriver.hs
++++ b/Test/Hspec/WebDriver.hs
+@@ -111,7 +111,8 @@ import Data.Traversable (traverse)
+ 
+ import qualified Test.Hspec as H
+ import Test.Hspec hiding (shouldReturn, shouldBe, shouldSatisfy, shouldThrow, pending, pendingWith, example)
+-import Test.Hspec.Core.Spec (Result(..), Item(..), Example(..), SpecTree, Tree(..), fromSpecList, runSpecM)
++import qualified Test.Hspec.Core as H
++import Test.Hspec.Core.Spec (Result(..), ResultStatus(..), Item(..), Example(..), SpecTree, Tree(..), fromSpecList, runSpecM)
+ 
+ import Test.WebDriver (WD, Capabilities)
+ import qualified Test.WebDriver as W
+@@ -398,7 +399,7 @@ procTestSession cfg cap s = do
+ 
+ instance Eq multi => Example (WdExample multi) where
+     type Arg (WdExample multi) = WdTestSession multi
+-    evaluateExample (WdPending msg) _ _ _ = return $ Pending msg
++    evaluateExample (WdPending msg) _ _ _ = return $ Result "" $ Pending Nothing msg
+     evaluateExample (WdExample multi (WdOptions {skipRemainingTestsAfterFailure}) wd) _ act _ = do
+         prevHadError <- newIORef False
+         aborted <- newIORef False
+@@ -445,9 +446,9 @@ instance Eq multi => Example (WdExample multi) where
+         merr <- readIORef prevHadError
+         mabort <- readIORef aborted
+         return $ case (merr, mabort) of
+-            (True, _) -> Pending (Just "Previous example had an error")
+-            (_, True) -> Pending (Just "Session has been aborted")
+-            _ -> Success
++            (True, _) -> Result "" $ Pending Nothing (Just "Previous example had an error")
++            (_, True) -> Result "" $ Pending Nothing (Just "Session has been aborted")
++            _         -> Result "" $ Success
+ 
+ --------------------------------------------------------------------------------
+ --- Utils

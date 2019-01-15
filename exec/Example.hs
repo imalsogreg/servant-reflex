@@ -11,6 +11,7 @@ module Main where
 ------------------------------------------------------------------------------
 import Data.Bool
 import Data.Maybe
+import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Monoid (First(..), (<>))
 import Data.Text (Text)
@@ -34,6 +35,29 @@ main :: IO ()
 main = mainWidget $ do
     divClass "example-base" run
     divClass "example-multi" runMulti
+
+baseUrlWidget :: forall t m .(SupportsServantReflex t m,
+                              DomBuilderSpace m ~ GhcjsDomSpace,
+                              MonadFix m,
+                              PostBuild t m,
+                              MonadHold t m,
+                              DomBuilder t m)
+              => m (Dynamic t BaseUrl)
+baseUrlWidget = elClass "div" "base-url" $ do
+  urlWidget <- dropdown (0 :: Int) (constDyn $ 0 =: "BaseUrl") def
+  let bUrlWidget = ffor (value urlWidget) $ \i -> case i of
+        0 -> fullUrlWidget
+        _ -> error "Surprising value"
+  join <$> widgetHold fullUrlWidget (updated bUrlWidget)
+  where fullUrlWidget :: m (Dynamic t BaseUrl)
+        fullUrlWidget = do
+          schm <- dropdown Https (constDyn $ Https =: "https" <> Http =: "http") def
+          srv  <- textInput def {_textInputConfig_attributes = constDyn $ "placeholder" =: "example.com"}
+          text ":"
+          prt  <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "80"}
+          port :: Dynamic t Int <- holdDyn 80 (fmapMaybe (readMaybe . T.unpack) $ updated (value prt))
+          path <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "a/b" }
+          return $ BaseUrl <$> value schm <*> (T.unpack <$> value srv) <*> port <*> (T.unpack <$> value path)
 
 
 runMulti :: forall t m. (SupportsServantReflex t m,
@@ -91,7 +115,7 @@ run = mdo
   -- (alternatively we could just `let url = constDyn (BasePath "/")`)
   url <- baseUrlWidget
   el "br" (return ())
-  dynText $ showBaseUrl <$> url
+  dynText $ T.pack . showBaseUrl <$> url
 
   el "br" (return ())
 

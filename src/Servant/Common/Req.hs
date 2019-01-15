@@ -134,9 +134,9 @@ qParamToQueryPart QNone             = Right Nothing
 qParamToQueryPart (QParamInvalid e) = Left e
 
 
-data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
-                 | QueryPartParams (Dynamic t [Text])
-                 | QueryPartFlag   (Dynamic t Bool)
+data QueryPart = QueryPartParam  (Either Text (Maybe Text))
+               | QueryPartParams [Text]
+               | QueryPartFlag   Bool
 
 
 -------------------------------------------------------------------------------
@@ -145,7 +145,7 @@ data QueryPart t = QueryPartParam  (Dynamic t (Either Text (Maybe Text)))
 data Req t = Req
   { reqMethod    :: Text
   , reqPathParts :: [Dynamic t (Either Text Text)]
-  , qParams      :: [(Text, QueryPart t)]
+  , qParams      :: [(Text, QueryPart)]
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
@@ -184,19 +184,19 @@ reqToReflexRequest reqMeth reqHost req =
                 (T.intercalate "/" . fmap escape)
                 urlParts
 
-      queryPartString :: (Text, QueryPart t) -> Dynamic t (Maybe (Either Text Text))
+      queryPartString :: (Text, QueryPart) -> Dynamic t (Maybe (Either Text Text))
       queryPartString (pName, qp) = case qp of
-        QueryPartParam p -> ffor p $ \case
+        QueryPartParam p -> pure $ case p of
           Left e         -> Just (Left e)
           Right (Just a) -> Just (Right $ pName <> "=" <> escape a)
           Right Nothing  -> Nothing
-        QueryPartParams ps -> ffor ps $ \pStrings ->
+        QueryPartParams ps -> pure $ flip ($) ps $ \pStrings ->
           if null pStrings
           then Nothing
           else Just . Right
                . T.intercalate "&"
                $ fmap (\p -> pName <> "=" <> escape p) pStrings
-        QueryPartFlag fl -> ffor fl $ \case
+        QueryPartFlag fl -> pure $ flip ($) fl $ \case
           True ->  Just $ Right pName
           False -> Nothing
 

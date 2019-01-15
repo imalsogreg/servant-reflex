@@ -258,11 +258,11 @@ instance (KnownSymbol sym,
       reqs' baseurl opts
 
     where pname = symbolVal (Proxy :: Proxy sym)
-          p prm = QueryPartParam $ fmap qParamToQueryPart prm
+          p prm = QueryPartParam $ qParamToQueryPart prm
           paramPair mp = (T.pack pname, p mp)
           -- reqs' = (\params reqs -> (\req param -> req {qParams = paramPair param : qParams req}) <$> reqs <*> params)
           --         <$> mparams <*> reqs
-          reqs' = liftA2 (\(pr :: QParam a) (r :: Req t) -> r { qParams = paramPair (constDyn pr) : qParams r })
+          reqs' = liftA2 (\(pr :: QParam a) (r :: Req t) -> r { qParams = paramPair pr : qParams r })
                   <$> mparams <*> reqs
 
 
@@ -279,9 +279,9 @@ instance (KnownSymbol sym,
   clientWithRouteMulti Proxy q f tag reqs baseurl opts paramlists =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl opts
 
-      where req' l r = r { qParams =  (T.pack pname, params' (constDyn l)) : qParams r }
+      where req' l r = r { qParams =  (T.pack pname, params' l) : qParams r }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' l = QueryPartParams $ (fmap . fmap) (toQueryParam)
+            params' l = QueryPartParams $ map toQueryParam
                         l
             reqs' = liftA2 req' <$> paramlists <*> reqs
 
@@ -298,8 +298,8 @@ instance (KnownSymbol sym,
   clientWithRouteMulti Proxy q f' tag reqs baseurl opts flags =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f' tag reqs' baseurl opts
 
-    where req' f req = req { qParams = thisPair (constDyn f) : qParams req }
-          thisPair f = (T.pack pName, QueryPartFlag f) :: (Text, QueryPart t)
+    where req' f req = req { qParams = thisPair f : qParams req }
+          thisPair f = (T.pack pName, QueryPartFlag f) :: (Text, QueryPart)
           pName      = symbolVal (Proxy :: Proxy sym)
           reqs'      = liftA2 req' <$> flags <*> reqs
 

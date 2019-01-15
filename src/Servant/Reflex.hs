@@ -353,7 +353,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
       => HasClient t m (QueryParam sym a :> sublayout) tag where
 
   type Client t m (QueryParam sym a :> sublayout) tag =
-    Dynamic t (QParam a) -> Client t m sublayout tag
+    QParam a -> Client t m sublayout tag
 
   -- if mparam = Nothing, we don't add it to the query string
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap mparam =
@@ -363,7 +363,7 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
     where pname = symbolVal (Proxy :: Proxy sym)
           --p prm = QueryPartParam $ (fmap . fmap) (toQueryParam) prm
           --paramPair = (T.pack pname, p mparam)
-          p prm = QueryPartParam $ fmap qParamToQueryPart prm -- (fmap . fmap) (unpack . toQueryParam) prm
+          p prm = QueryPartParam $ qParamToQueryPart prm -- (fmap . fmap) (unpack . toQueryParam) prm
           paramPair = (T.pack pname, p mparam)
 
 
@@ -400,14 +400,14 @@ instance (KnownSymbol sym, ToHttpApiData a, HasClient t m sublayout tag, Reflex 
       => HasClient t m (QueryParams sym a :> sublayout) tag where
 
   type Client t m (QueryParams sym a :> sublayout) tag =
-    Dynamic t [a] -> Client t m sublayout tag
+    [a] -> Client t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap paramlist =
     clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
 
       where req'    = req { qParams =  (T.pack pname, params') : qParams req }
             pname   = symbolVal (Proxy :: Proxy sym)
-            params' = QueryPartParams $ (fmap . fmap) toQueryParam
+            params' = QueryPartParams $ map toQueryParam
                         paramlist
 
 
@@ -440,13 +440,13 @@ instance (KnownSymbol sym, HasClient t m sublayout tag, Reflex t)
       => HasClient t m (QueryFlag sym :> sublayout) tag where
 
   type Client t m (QueryFlag sym :> sublayout) tag =
-    Dynamic t Bool -> Client t m sublayout tag
+    Bool -> Client t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap flag =
     clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
 
     where req'     = req { qParams = thisPair : qParams req }
-          thisPair = (T.pack pName, QueryPartFlag flag) :: (Text, QueryPart t)
+          thisPair = (T.pack pName, QueryPartFlag flag) :: (Text, QueryPart)
           pName    = symbolVal (Proxy :: Proxy sym)
 
 

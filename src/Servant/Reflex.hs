@@ -146,7 +146,7 @@ class Monad m => HasClient t m layout (tag :: *) where
     :: Proxy layout
     -> Proxy m
     -> Proxy tag
-    -> Req t
+    -> Req
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Client t m layout tag
@@ -156,7 +156,7 @@ class Monad m => HasClient t m layout (tag :: *) where
     :: Proxy layout
     -> Proxy m
     -> Proxy tag
-    -> Req t
+    -> Req
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> (forall a. Event t (ReqResult tag a) -> m (Event t (ReqResult tag a)))

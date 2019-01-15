@@ -99,7 +99,7 @@ clientWithOptsA p q f tag baseurl opts =
 class HasClientMulti t m layout f (tag :: *) where
   type ClientMulti t m layout f tag :: *
   clientWithRouteMulti :: Proxy layout -> Proxy m -> Proxy f -> Proxy tag
-                       -> Dynamic t (f (Req t)) -> Dynamic t BaseUrl
+                       -> Dynamic t (f (Req)) -> Dynamic t BaseUrl
                        -> ClientOptions -> ClientMulti t m layout f tag
 
 
@@ -262,7 +262,7 @@ instance (KnownSymbol sym,
           paramPair mp = (T.pack pname, p mp)
           -- reqs' = (\params reqs -> (\req param -> req {qParams = paramPair param : qParams req}) <$> reqs <*> params)
           --         <$> mparams <*> reqs
-          reqs' = liftA2 (\(pr :: QParam a) (r :: Req t) -> r { qParams = paramPair pr : qParams r })
+          reqs' = liftA2 (\(pr :: QParam a) (r :: Req) -> r { qParams = paramPair pr : qParams r })
                   <$> mparams <*> reqs
 
 

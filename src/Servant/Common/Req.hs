@@ -142,7 +142,7 @@ data QueryPart = QueryPartParam  (Either Text (Maybe Text))
 -------------------------------------------------------------------------------
 -- The data structure used to build up request information while traversing
 -- the shape of a servant API
-data Req t = Req
+data Req = Req
   { reqMethod    :: Text
   , reqPathParts :: [(Either Text Text)]
   , qParams      :: [(Text, QueryPart)]
@@ -152,14 +152,14 @@ data Req t = Req
   , authData     :: Maybe (Maybe BasicAuthData)
   }
 
-defReq :: Req t
+defReq :: Req
 defReq = Req "GET" [] [] Nothing [] def Nothing
 
-prependToPathParts :: (Either Text Text) -> Req t -> Req t
+prependToPathParts :: (Either Text Text) -> Req -> Req
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
-addHeader :: (ToHttpApiData a, Reflex t) => Text -> (Either Text a) -> Req t -> Req t
+addHeader :: (ToHttpApiData a) => Text -> (Either Text a) -> Req -> Req
 addHeader name val req = req { headers = (name, fmap (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
@@ -167,7 +167,7 @@ reqToReflexRequest
     :: forall t. Reflex t
     => Text
     -> Dynamic t BaseUrl
-    -> Req t
+    -> Req
     -> Dynamic t (Either Text (XhrRequest XhrPayload))
 reqToReflexRequest reqMeth reqHost req =
   let t :: [Either Text Text]
@@ -277,14 +277,14 @@ displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 -- | This function performs the request
 performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
                 => Text
-                -> Dynamic t (f (Req t))
+                -> Dynamic t (f (Req))
                 -> Dynamic t BaseUrl
                 -> ClientOptions
                 -> Event t tag
                 -> m (Event t (tag, f (Either Text XhrResponse)))
 performRequests reqMeth rs reqHost opts trigger = do
   let xhrReqs =
-          join $ (\(fxhr :: f (Req t)) -> sequence $
+          join $ (\(fxhr :: f (Req)) -> sequence $
                      reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
 
       -- xhrReqs = fmap snd <$> xhrReqsAndDebugs
@@ -348,7 +348,7 @@ performRequestsCT
         MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
-    -> Dynamic t (f (Req t))
+    -> Dynamic t (f (Req))
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag
@@ -372,7 +372,7 @@ performRequestsNoBody
     :: (SupportsServantReflex t m,
         Traversable f)
     => Text
-    -> Dynamic t (f (Req t))
+    -> Dynamic t (f Req)
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag

@@ -331,10 +331,10 @@ instance (MimeRender ct a,
 
   clientWithRouteMulti Proxy q f tag reqs baseurl opts bodies =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl opts
-       where req'        b r = r { reqBody = bodyBytesCT (constDyn b) }
+       where req'        b r = r { reqBody = bodyBytesCT b }
              ctProxy         = Proxy :: Proxy ct
              ctString        = T.pack $ show $ contentType ctProxy
-             bodyBytesCT b   = Just $ (fmap . fmap)
+             bodyBytesCT b   = Just $ fmap
                                (\b' -> (mimeRender ctProxy b', ctString))
                                b
              reqs'           = liftA2 req' <$> bodies <*> reqs

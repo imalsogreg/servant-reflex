@@ -497,14 +497,14 @@ instance (MimeRender ct a, HasClient t m sublayout tag, Reflex t)
       => HasClient t m (ReqBody (ct ': cts) a :> sublayout) tag where
 
   type Client t m (ReqBody (ct ': cts) a :> sublayout) tag =
-    Dynamic t (Either Text a) -> Client t m sublayout tag
+    (Either Text a) -> Client t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap body =
     clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t req' baseurl opts wrap
        where req'        = req { reqBody = bodyBytesCT }
              ctProxy     = Proxy :: Proxy ct
              ctString    = T.pack $ show $ contentType ctProxy
-             bodyBytesCT = Just $ (fmap . fmap)
+             bodyBytesCT = Just $ fmap
                              (\b -> (mimeRender ctProxy b, ctString))
                              body
 

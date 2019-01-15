@@ -146,7 +146,7 @@ data Req t = Req
   { reqMethod    :: Text
   , reqPathParts :: [(Either Text Text)]
   , qParams      :: [(Text, QueryPart)]
-  , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
+  , reqBody      :: Maybe (Either Text (BL.ByteString, Text))
   , headers      :: [(Text, (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Maybe BasicAuthData)
@@ -239,9 +239,9 @@ reqToReflexRequest reqMeth reqHost req =
                       , _xhrRequestConfig_responseHeaders = def
                       }
 
-      xhrOpts :: Dynamic t (Either Text (XhrRequestConfig XhrPayload))
+      xhrOpts :: Either Text (XhrRequestConfig XhrPayload)
       xhrOpts = case reqBody req of
-        Nothing    -> pure $ case xhrHeaders of
+        Nothing    -> case xhrHeaders of
                                Left e -> Left e
                                Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
                                                        , _xhrRequestConfig_user = Nothing
@@ -250,7 +250,7 @@ reqToReflexRequest reqMeth reqHost req =
                                                        , _xhrRequestConfig_sendData = ""
                                                        , _xhrRequestConfig_withCredentials = False
                                                        }
-        Just rBody -> mkConfigBody xhrHeaders <$> rBody
+        Just rBody -> mkConfigBody xhrHeaders rBody
 
       mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
       mkAuth _ (Left e) = Left e
@@ -259,13 +259,13 @@ reqToReflexRequest reqMeth reqHost req =
         { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
         , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
-      addAuth :: Dynamic t (Either Text (XhrRequestConfig x))
-              -> Dynamic t (Either Text (XhrRequestConfig x))
+      addAuth :: Either Text (XhrRequestConfig x)
+              -> Either Text (XhrRequestConfig x)
       addAuth xhr = case authData req of
         Nothing -> xhr
-        Just auth -> mkAuth auth <$> xhr
+        Just auth -> mkAuth auth xhr
 
-      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
+      xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (pure (addAuth xhrOpts))
 
   in xhrReq
 

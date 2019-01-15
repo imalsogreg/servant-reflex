@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE ConstraintKinds     #-}
 
 module Servant.Common.Req where
 
@@ -31,12 +32,13 @@ import           Data.Traversable           (forM)
 import           Language.Javascript.JSaddle.Monad (JSM, MonadJSM, liftJSM)
 import qualified Network.URI                as N
 import           Reflex.Dom.Core                 hiding (tag)
-import           Servant.Common.BaseUrl     (BaseUrl, showBaseUrl,
-                                             SupportsServantReflex)
+import           Servant.Client.Core.Internal.BaseUrl     (BaseUrl, showBaseUrl)
 import           Servant.API.ContentTypes   (MimeUnrender(..), NoContent(..))
 import           Web.HttpApiData            (ToHttpApiData(..))
 -------------------------------------------------------------------------------
 import           Servant.API.BasicAuth
+
+type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, HasWebView (Performable m), MonadJSM (Performable m))
 
 
 ------------------------------------------------------------------------------
@@ -172,7 +174,7 @@ reqToReflexRequest reqMeth reqHost req =
       t = sequence $ reverse $ reqPathParts req
 
       baseUrl :: Dynamic t (Either Text Text)
-      baseUrl = Right . showBaseUrl <$> reqHost
+      baseUrl = Right . T.pack . showBaseUrl <$> reqHost
 
       urlParts :: Dynamic t (Either Text [Text])
       urlParts = fmap sequence t

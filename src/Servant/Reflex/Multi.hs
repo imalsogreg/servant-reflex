@@ -60,8 +60,7 @@ import           Reflex.Dom.Core        (Dynamic, Event, Reflex,
                                          XhrResponseHeaders (..),
                                          attachPromptlyDynWith, constDyn)
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
-                                         SupportsServantReflex)
+import           Servant.Client.Core.Internal.BaseUrl (BaseUrl (..), Scheme (..))
 import           Servant.Common.Req     (ClientOptions,
                                          QParam (..), QueryPart (..), Req,
                                          ReqResult (..), addHeader, authData,
@@ -73,7 +72,8 @@ import           Servant.Common.Req     (ClientOptions,
                                          prependToPathParts, qParamToQueryPart,
                                          qParams, reqBody, reqFailure,
                                          reqMethod, reqSuccess, reqSuccess',
-                                         respHeaders, response, withCredentials)
+                                         respHeaders, response, withCredentials,
+                                         SupportsServantReflex)
 import           Servant.Reflex         (BuildHeaderKeysTo (..), toHeaders)
 
 

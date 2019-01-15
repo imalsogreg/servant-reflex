@@ -37,6 +37,8 @@ let
       hspec-snap      = doJailbreak super.hspec-snap;
       snap-server     = dontCheck super.snap-server;
       servant-snap    = do [ dontCheck doJailbreak ] (self.callHackage "servant-snap" "0.8.1" {});
+      servant-reflex = lib.appendConfigureFlag
+                         (self.callPackage ./default.nix {}) "-fExample";
       skylighting     = dontCheck super.skylighting;
       testdriver      = self.callCabal2nix "testdriver" ./testdriver {};
       testserver      = import nix/testserver.nix ghcjsPkgs.servant-reflex self super;

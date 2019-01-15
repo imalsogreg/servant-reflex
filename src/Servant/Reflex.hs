@@ -34,7 +34,7 @@ module Servant.Reflex
   , HasClient
   , Client
   , module Servant.Common.Req
-  , module Servant.Common.BaseUrl
+  , module Servant.Client.Core.Internal.BaseUrl
   ) where
 
 ------------------------------------------------------------------------------
@@ -68,9 +68,7 @@ import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           leftmost, performRequestsAsync,
                                           )
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
-                                          showBaseUrl,
-                                          SupportsServantReflex)
+import           Servant.Client.Core.Internal.BaseUrl  (BaseUrl(..), Scheme(..), showBaseUrl)
 import           Servant.Common.Req      (ClientOptions(..),
                                           defaultClientOptions,
                                           Req, ReqResult(..), QParam(..),
@@ -86,7 +84,8 @@ import           Servant.Common.Req      (ClientOptions(..),
                                           reqMethod, respHeaders,
                                           response,
                                           reqTag,
-                                          qParams, withCredentials)
+                                          qParams, withCredentials,
+                                          SupportsServantReflex)
 
 
 -- * Accessing APIs as a Client
@@ -463,7 +462,7 @@ instance SupportsServantReflex t m => HasClient t m Raw tag where
     let xhrs'   = liftA2 (\x path -> case x of
                              Left e -> Left e
                              Right jx -> Right $ jx { _xhrRequest_url = path <> _xhrRequest_url jx }
-                         ) xhrs (showBaseUrl <$> baseurl)
+                         ) xhrs (T.pack . showBaseUrl <$> baseurl)
         xhrs''  = attachPromptlyDynWith (flip (,)) xhrs' triggers :: Event t (tag, Either Text (XhrRequest ()))
         badReq = fmapMaybe (\(t,x) -> either (Just . (t,)) (const Nothing) x) xhrs'' :: Event t (tag, Text)
         okReq  = fmapMaybe (\(t,x) -> either (const Nothing) (Just . (t,)) x) xhrs'' :: Event t (tag, XhrRequest ())

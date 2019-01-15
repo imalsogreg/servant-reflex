@@ -217,7 +217,7 @@ instance (KnownSymbol sym,
       => HasClientMulti t m (Header sym a :> sublayout) f tag where
 
   type ClientMulti t m (Header sym a :> sublayout) f tag =
-    f (Dynamic t (Either Text a)) -> ClientMulti t m sublayout f tag
+    f (Either Text a) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy f q tag reqs baseurl opts eVals =
     clientWithRouteMulti (Proxy :: Proxy sublayout) f

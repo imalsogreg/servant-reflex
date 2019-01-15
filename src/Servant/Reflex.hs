@@ -299,7 +299,7 @@ instance (KnownSymbol sym, ToHttpApiData a,
       => HasClient t m (Header sym a :> sublayout) tag where
 
   type Client t m (Header sym a :> sublayout) tag =
-    Dynamic t (Either Text a) -> Client t m sublayout tag
+    Either Text a -> Client t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap eVal =
     clientWithRouteAndResultHandler

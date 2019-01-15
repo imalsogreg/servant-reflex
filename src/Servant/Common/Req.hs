@@ -147,7 +147,7 @@ data Req t = Req
   , reqPathParts :: [(Either Text Text)]
   , qParams      :: [(Text, QueryPart)]
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
-  , headers      :: [(Text, Dynamic t (Either Text Text))]
+  , headers      :: [(Text, (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
   , authData     :: Maybe (Maybe BasicAuthData)
   }
@@ -159,8 +159,8 @@ prependToPathParts :: (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
-addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
+addHeader :: (ToHttpApiData a, Reflex t) => Text -> (Either Text a) -> Req t -> Req t
+addHeader name val req = req { headers = (name, fmap (TE.decodeUtf8 . toHeader) val) : headers req }
 
 
 reqToReflexRequest
@@ -214,11 +214,12 @@ reqToReflexRequest reqMeth reqHost req =
                   | otherwise = x <> "/" <> y
 
 
-      xhrHeaders :: Dynamic t (Either Text [(Text, Text)])
-      xhrHeaders = (fmap sequence . sequence . fmap f . headers) req
-        where
-          f = \(headerName, dynam) ->
-                fmap (fmap (\rightVal -> (headerName, rightVal))) dynam
+      xhrHeaders :: (Either Text [(Text, Text)])
+      -- xhrHeaders = (fmap sequence . sequence . fmap f . headers) req
+      xhrHeaders = (sequence . fmap sequence . headers) req
+        -- where
+        --   f = \(headerName, dynam) ->
+        --         fmap (fmap (\rightVal -> (headerName, rightVal))) dynam
 
       mkConfigBody :: Either Text [(Text,Text)]
                    -> (Either Text (BL.ByteString, Text))
@@ -240,7 +241,7 @@ reqToReflexRequest reqMeth reqHost req =
 
       xhrOpts :: Dynamic t (Either Text (XhrRequestConfig XhrPayload))
       xhrOpts = case reqBody req of
-        Nothing    -> ffor xhrHeaders $ \case
+        Nothing    -> pure $ case xhrHeaders of
                                Left e -> Left e
                                Right hs -> Right $ def { _xhrRequestConfig_headers = Map.fromList hs
                                                        , _xhrRequestConfig_user = Nothing
@@ -249,7 +250,7 @@ reqToReflexRequest reqMeth reqHost req =
                                                        , _xhrRequestConfig_sendData = ""
                                                        , _xhrRequestConfig_withCredentials = False
                                                        }
-        Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
+        Just rBody -> mkConfigBody xhrHeaders <$> rBody
 
       mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
       mkAuth _ (Left e) = Left e

@@ -149,7 +149,7 @@ data Req t = Req
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
   , headers      :: [(Text, Dynamic t (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
-  , authData     :: Maybe (Dynamic t (Maybe BasicAuthData))
+  , authData     :: Maybe (Maybe BasicAuthData)
   }
 
 defReq :: Req t
@@ -262,7 +262,7 @@ reqToReflexRequest reqMeth reqHost req =
               -> Dynamic t (Either Text (XhrRequestConfig x))
       addAuth xhr = case authData req of
         Nothing -> xhr
-        Just auth -> liftA2 mkAuth auth xhr
+        Just auth -> mkAuth auth <$> xhr
 
       xhrReq = (liftA2 . liftA2) (\p opt -> XhrRequest reqMeth p opt) xhrUrl (addAuth xhrOpts)
 

@@ -546,7 +546,7 @@ instance HasClient t m api tag => HasClient t m (IsSecure :> api) tag where
 instance (HasClient t m api tag, Reflex t)
       => HasClient t m (BasicAuth realm usr :> api) tag where
 
-  type Client t m (BasicAuth realm usr :> api) tag = Dynamic t (Maybe BasicAuthData)
+  type Client t m (BasicAuth realm usr :> api) tag = Maybe BasicAuthData
                                                -> Client t m api tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap authdata =

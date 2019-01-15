@@ -384,5 +384,5 @@ instance (HasClientMulti t m api f tag, Reflex t, Applicative f)
   clientWithRouteMulti Proxy q f tag reqs baseurl opts authdatas =
     clientWithRouteMulti (Proxy :: Proxy api) q f tag reqs' baseurl opts
       where
-        req'  a r = r { authData = Just (constDyn a) }
+        req'  a r = r { authData = Just a }
         reqs' = liftA2 req' <$> authdatas <*> reqs

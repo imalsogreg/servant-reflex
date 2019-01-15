@@ -187,12 +187,12 @@ instance (SupportsServantReflex t m, ToHttpApiData a, HasClient t m sublayout ta
       => HasClient t m (Capture capture a :> sublayout) tag where
 
   type Client t m (Capture capture a :> sublayout) tag =
-    Dynamic t (Either Text a) -> Client t m sublayout tag
+    (Either Text a) -> Client t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap val =
     clientWithRouteAndResultHandler
       (Proxy :: Proxy sublayout) q t (prependToPathParts p req) baseurl opts wrap
-    where p = (fmap . fmap) (toUrlPiece) val
+    where p = fmap (toUrlPiece) val
 
 
 -- VERB (Returning content) --
@@ -516,7 +516,7 @@ instance (KnownSymbol path, HasClient t m sublayout tag, Reflex t) => HasClient 
 
   clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap =
      clientWithRouteAndResultHandler (Proxy :: Proxy sublayout) q t
-                     (prependToPathParts (pure (Right $ T.pack p)) req) baseurl opts wrap
+                     (prependToPathParts (Right $ T.pack p) req) baseurl opts wrap
 
     where p = symbolVal (Proxy :: Proxy path)
 

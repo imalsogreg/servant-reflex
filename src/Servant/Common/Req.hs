@@ -144,7 +144,7 @@ data QueryPart = QueryPartParam  (Either Text (Maybe Text))
 -- the shape of a servant API
 data Req t = Req
   { reqMethod    :: Text
-  , reqPathParts :: [Dynamic t (Either Text Text)]
+  , reqPathParts :: [(Either Text Text)]
   , qParams      :: [(Text, QueryPart)]
   , reqBody      :: Maybe (Dynamic t (Either Text (BL.ByteString, Text)))
   , headers      :: [(Text, Dynamic t (Either Text Text))]
@@ -155,7 +155,7 @@ data Req t = Req
 defReq :: Req t
 defReq = Req "GET" [] [] Nothing [] def Nothing
 
-prependToPathParts :: Dynamic t (Either Text Text) -> Req t -> Req t
+prependToPathParts :: (Either Text Text) -> Req t -> Req t
 prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
@@ -170,17 +170,17 @@ reqToReflexRequest
     -> Req t
     -> Dynamic t (Either Text (XhrRequest XhrPayload))
 reqToReflexRequest reqMeth reqHost req =
-  let t :: Dynamic t [Either Text Text]
-      t = sequence $ reverse $ reqPathParts req
+  let t :: [Either Text Text]
+      t = reverse $ reqPathParts req
 
       baseUrl :: Dynamic t (Either Text Text)
       baseUrl = Right . T.pack . showBaseUrl <$> reqHost
 
-      urlParts :: Dynamic t (Either Text [Text])
-      urlParts = fmap sequence t
+      urlParts :: Either Text [Text]
+      urlParts = sequence t
 
-      urlPath :: Dynamic t (Either Text Text)
-      urlPath = (fmap.fmap)
+      urlPath :: (Either Text Text)
+      urlPath = fmap
                 (T.intercalate "/" . fmap escape)
                 urlParts
 
@@ -207,7 +207,7 @@ reqToReflexRequest reqMeth reqHost req =
       queryString :: Dynamic t (Either Text Text) =
         ffor queryPartStrings' $ \qs -> fmap (T.intercalate "&") qs
       xhrUrl =  (liftA3 . liftA3) (\a p q -> a </> if T.null q then p else p <> "?" <> q)
-          baseUrl urlPath queryString
+          baseUrl (pure urlPath) queryString
         where
           (</>) :: Text -> Text -> Text
           x </> y | ("/" `T.isSuffixOf` x) || ("/" `T.isPrefixOf` y) = x <> y

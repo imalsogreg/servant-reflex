@@ -121,13 +121,13 @@ instance (SupportsServantReflex t m,
       => HasClientMulti t m (Capture capture a :> sublayout) f tag where
 
   type ClientMulti t m (Capture capture a :> sublayout) f tag =
-    f (Dynamic t (Either Text a)) -> ClientMulti t m sublayout f tag
+    f (Either Text a) -> ClientMulti t m sublayout f tag
 
   clientWithRouteMulti _ q f tag reqs baseurl opts vals =
     clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag reqs' baseurl opts
     where
       reqs' = (prependToPathParts <$> ps <*>) <$> reqs
-      ps    = (fmap .  fmap . fmap) toUrlPiece vals
+      ps    = (fmap . fmap) toUrlPiece vals
 
 
 ------------------------------------------------------------------------------
@@ -348,7 +348,7 @@ instance (KnownSymbol path,
 
   clientWithRouteMulti Proxy q f tag reqs baseurl =
      clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag
-                     (fmap (prependToPathParts (pure (Right $ T.pack p))) <$> reqs)
+                     (fmap (prependToPathParts (Right $ T.pack p)) <$> reqs)
                      baseurl
 
     where p = symbolVal (Proxy :: Proxy path)

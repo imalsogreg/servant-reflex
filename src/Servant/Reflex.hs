@@ -64,7 +64,7 @@ import qualified Servant.Auth            as Auth
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           XhrRequest(..),
                                           XhrResponseHeaders(..),
-                                          XhrResponse(..), attachPromptlyDynWith, constDyn, ffor, fmapMaybe,
+                                          XhrResponse(..), attachPromptlyDynWith, ffor, fmapMaybe,
                                           leftmost, performRequestsAsync,
                                           )
 ------------------------------------------------------------------------------
@@ -205,7 +205,7 @@ instance {-# OVERLAPPABLE #-}
     -- TODO how to access input types here?
     -- ExceptT ServantError IO a
   clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
-      wrap =<< fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity $ req') baseurl opts trigs
+      wrap =<< fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (Identity $ req') baseurl opts trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
             req' = req { reqMethod = method }
 
@@ -219,7 +219,7 @@ instance {-# OVERLAPPING #-}
     -- TODO: how to access input types here?
     -- ExceptT ServantError IO NoContent
   clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs =
-    wrap =<< fmap  runIdentity <$> performRequestsNoBody method (constDyn $ Identity req) baseurl opts trigs
+    wrap =<< fmap  runIdentity <$> performRequestsNoBody method (Identity req) baseurl opts trigs
       where method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
 
 
@@ -257,7 +257,7 @@ instance {-# OVERLAPPABLE #-}
       Event t tag -> m (Event t (ReqResult tag (Headers ls a)))
   clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-    resp <- fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (constDyn $ Identity req') baseurl opts trigs
+    resp <- fmap runIdentity <$> performRequestsCT (Proxy :: Proxy ct) method (Identity req') baseurl opts trigs
     wrap $ toHeaders <$> resp
     where req' = req { respHeaders =
                        OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))
@@ -273,7 +273,7 @@ instance {-# OVERLAPPABLE #-}
     = Event t tag -> m (Event t (ReqResult tag (Headers ls NoContent)))
   clientWithRouteAndResultHandler Proxy _ _ req baseurl opts wrap trigs = do
     let method = E.decodeUtf8 $ reflectMethod (Proxy :: Proxy method)
-    resp <- fmap runIdentity <$> performRequestsNoBody method (constDyn $ Identity req') baseurl opts trigs
+    resp <- fmap runIdentity <$> performRequestsNoBody method (Identity req') baseurl opts trigs
     wrap $ toHeaders <$> resp
     where req' = req {respHeaders =
                       OnlyHeaders (Set.fromList (buildHeaderKeysTo (Proxy :: Proxy ls)))

@@ -15,7 +15,6 @@ module Servant.Common.Req where
 import           Control.Applicative        (liftA2, liftA3)
 import           Control.Arrow              ((&&&))
 import           Control.Concurrent
-import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Builder    as Builder
@@ -277,15 +276,14 @@ displayHttpRequest httpmethod = "HTTP " <> httpmethod <> " request"
 -- | This function performs the request
 performRequests :: forall t m f tag.(SupportsServantReflex t m, Traversable f)
                 => Text
-                -> Dynamic t (f (Req))
+                -> (f (Req))
                 -> Dynamic t BaseUrl
                 -> ClientOptions
                 -> Event t tag
                 -> m (Event t (tag, f (Either Text XhrResponse)))
 performRequests reqMeth rs reqHost opts trigger = do
-  let xhrReqs =
-          join $ (\(fxhr :: f (Req)) -> sequence $
-                     reqToReflexRequest reqMeth reqHost <$> fxhr) <$> rs
+  let xhrReqs = (\(fxhr :: f (Req)) -> sequence $
+                  reqToReflexRequest reqMeth reqHost <$> fxhr) rs
 
       -- xhrReqs = fmap snd <$> xhrReqsAndDebugs
       reqs    = attachPromptlyDynWith
@@ -348,7 +346,7 @@ performRequestsCT
         MimeUnrender ct a, Traversable f)
     => Proxy ct
     -> Text
-    -> Dynamic t (f (Req))
+    -> (f (Req))
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag
@@ -372,7 +370,7 @@ performRequestsNoBody
     :: (SupportsServantReflex t m,
         Traversable f)
     => Text
-    -> Dynamic t (f Req)
+    -> (f Req)
     -> Dynamic t BaseUrl
     -> ClientOptions
     -> Event t tag

@@ -148,7 +148,7 @@ data Req = Req
   , reqBody      :: Maybe (Either Text (BL.ByteString, Text))
   , headers      :: [(Text, (Either Text Text))]
   , respHeaders  :: XhrResponseHeaders
-  , authData     :: Maybe (Maybe BasicAuthData)
+  , authData     :: (Maybe BasicAuthData)
   }
 
 defReq :: Req
@@ -251,10 +251,9 @@ reqToReflexRequest reqMeth reqHost req =
                                                        }
         Just rBody -> mkConfigBody xhrHeaders rBody
 
-      mkAuth :: Maybe BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
+      mkAuth :: BasicAuthData -> Either Text (XhrRequestConfig x) -> Either Text (XhrRequestConfig x)
       mkAuth _ (Left e) = Left e
-      mkAuth Nothing r  = r
-      mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
+      mkAuth (BasicAuthData u p) (Right config) = Right $ config
         { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
         , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 

@@ -377,7 +377,7 @@ instance HasClientMulti t m api f tag => HasClientMulti t m (IsSecure :> api) f 
 instance (HasClientMulti t m api f tag, Reflex t, Applicative f)
       => HasClientMulti t m (BasicAuth realm usr :> api) f tag where
 
-  type ClientMulti t m (BasicAuth realm usr :> api) f tag = (f (Maybe BasicAuthData))
+  type ClientMulti t m (BasicAuth realm usr :> api) f tag = (f BasicAuthData)
                                                -> ClientMulti t m api f tag
 
   clientWithRouteMulti Proxy q f tag reqs baseurl opts authdatas =

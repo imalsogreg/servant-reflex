@@ -18,4 +18,6 @@ mkDerivation {
   ];
   description = "Servant reflex API generator";
   license = stdenv.lib.licenses.bsd3;
+  configureFlags = [ "-fexample" ];
+
 }

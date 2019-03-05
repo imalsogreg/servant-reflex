@@ -1,7 +1,12 @@
+0.3.4
+-----
+
+Add selenium-based test suite
+
 0.3.3
 -----
 
-Explicitly escape reserved characters from path pieces and query parameters
+- Fix encoding issue: Explicitly escape reserved characters from path pieces and query parameters
 
 
 0.3.2

@@ -1,7 +1,7 @@
 Name: servant-reflex
 Version: 0.3.4
-Synopsis: Servant reflex API generator
-Description: Servant reflex API generator
+Synopsis: servant API generator for reflex apps
+Description: Generate reflex-compatible client functions from servant API descriptions
 License: BSD3
 License-file: LICENSE.md
 Author: Greg Hale, Doug Beardsley
@@ -17,12 +17,10 @@ Flag Example
 
 library
   exposed-modules:
-    Servant.Reflex
-    Servant.Reflex.Multi
-
-  other-modules:
     Servant.Common.BaseUrl
     Servant.Common.Req
+    Servant.Reflex
+    Servant.Reflex.Multi
 
   hs-source-dirs: src
   build-depends:
@@ -47,7 +45,7 @@ library
     text                >= 1.2  && < 1.3,
     transformers        >= 0.4  && < 0.6
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
 
   default-language: Haskell2010
 

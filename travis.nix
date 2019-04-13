@@ -21,6 +21,7 @@ let
       http-media      = dontCheck super.http-media;
       servant         = dontCheck super.servant;
       lens-aeson      = dontCheck super.lens-aeson;
+      SHA             = dontCheck super.SHA;
       servant-reflex = lib.appendConfigureFlag
                          (self.callPackage ./default.nix {}) "-fExample";
     };

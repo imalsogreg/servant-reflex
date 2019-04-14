@@ -10,6 +10,8 @@ before_script:
   - git config --global user.name "Travis-CI"
 
 script:
+  - nix-env -iA cachix -f https://cachix.org/api/v1/install
+  - cachix use imalsogreg
   - nix-build travis.nix -A build
   - nix-build travis.nix -A testserver
   - nix-build travis.nix -A testresults

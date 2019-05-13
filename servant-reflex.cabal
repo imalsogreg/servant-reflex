@@ -20,7 +20,7 @@ library
     Servant.Common.BaseUrl
     Servant.Common.Req
     Servant.Reflex
-    Servant.Reflex.Response
+    Servant.Reflex.ReloadOnError
     Servant.Reflex.Multi
 
   hs-source-dirs: src

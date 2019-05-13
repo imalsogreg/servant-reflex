@@ -4,7 +4,7 @@
 
 -- | Response handlers
 --   Usefull for 'clientWithOptsAndResultHandler'
-module Servant.Reflex.Response
+module Servant.Reflex.ReloadOnError
   ( reloadOnAPIError
   , reloadOnResponse
   , RefreshSupport
@@ -44,8 +44,8 @@ isAuthErr =
     False
     (\req ->
        let stat = _xhrResponse_status req
-       in (stat == fromInteger 401) &&
-           (stat == fromInteger 402) && (stat == fromInteger 407)) .
+       in (stat == fromInteger 401) ||
+           (stat == fromInteger 402) || (stat == fromInteger 407)) .
   response
 
 isDecodeError :: ReqResult () a -> Bool -- TODO find a better way of detecting this, is there no typesafe decode error?

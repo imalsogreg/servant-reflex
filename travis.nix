@@ -31,6 +31,7 @@ let
       servant-snap    = dontCheck ((import ./nix/servant-snap.nix {}) self super);
       testdriver      = self.callCabal2nix "testdriver" ./testdriver {};
       testserver      = import nix/testserver.nix ghcjsPkgs.servant-reflex self super;
+      servant-reflex  = self.callPackage ./default.nix {};
     };
   };
 

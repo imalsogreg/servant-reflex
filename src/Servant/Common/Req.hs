@@ -18,13 +18,14 @@ module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
 import           Control.Applicative               (liftA2, liftA3)
+import           Control.Arrow                     ((&&&))
 import           Control.Concurrent
 import           Control.Monad                     (join)
 import           Control.Monad.IO.Class            (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Bifunctor                    (first)
 import qualified Data.ByteString                   as BS
-import qualified Data.ByteString.Builder           as BB
+import qualified Data.ByteString.Builder           as Builder
 import           Data.ByteString.Lazy              (ByteString)
 import qualified Data.ByteString.Lazy.Char8        as BL
 import           Data.Functor.Compose
@@ -111,6 +112,13 @@ reqFailure :: ReqResult tag a -> Maybe Text
 reqFailure (ResponseFailure _ s _) = Just s
 reqFailure (RequestFailure  _ s)   = Just s
 reqFailure _                       = Nothing
+
+------------------------------------------------------------------------------
+-- | Simple filter/accessor like 'reqFailure', but keeping the request tag
+reqFailure' :: ReqResult tag a -> Maybe (tag,Text)
+reqFailure' (ResponseFailure tag s _) = Just (tag,s)
+reqFailure' (RequestFailure  tag s)   = Just (tag,s)
+reqFailure' _                         = Nothing
 
 
 ------------------------------------------------------------------------------
@@ -415,6 +423,18 @@ evalResponse decodeRes (tag, xhr) =
                      else ResponseFailure tag errMsg xhr
     in respPayld
 
+------------------------------------------------------------------------------
+-- | Utility for simultaneously accessing/filtering Success and Failure
+-- response 'Event's,
+fanReqResult :: Reflex t => Event t (ReqResult tag a) -> (Event t Text, Event t a)
+fanReqResult = fmapMaybe reqFailure &&& fmapMaybe reqSuccess
+
+------------------------------------------------------------------------------
+-- | Utility for simultaneously accessing/filtering Success and Failure
+-- response 'Event's, but keeping the request tag
+fanReqResult' :: Reflex t => Event t (ReqResult tag a) -> (Event t (tag, Text), Event t (tag, a))
+fanReqResult' = fmapMaybe reqFailure' &&& fmapMaybe reqSuccess'
+
 
 -- | Similar to 'Servant.API.ContentType.MimeUnrender' but with the differnce that
 -- the second argument expects a JSString instead of ByteString.
@@ -463,4 +483,4 @@ builderToText :: BB.Builder -> T.Text
 builderToText = T.decodeUtf8 . BL.toStrict . BB.toLazyByteString
 
 escape :: T.Text -> T.Text
-escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . T.decodeUtf8 . BL.toStrict . BB.toLazyByteString . toEncodedUrlPiece
+escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString . toEncodedUrlPiece

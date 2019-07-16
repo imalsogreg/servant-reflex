@@ -20,7 +20,6 @@ import           JSDOM.Generated.Document    (getLocation)
 import           JSDOM.Types                 (Location, liftDOM)
 import           Language.Javascript.JSaddle (MonadJSM, ( # ))
 import           Reflex
-import           Reflex.Dom.Builder.Class
 import           Reflex.Dom.Prerender
 import           Reflex.Dom.Widget.Basic
 import           Reflex.Dom.Xhr
@@ -28,7 +27,7 @@ import           Servant.Reflex
 
 -- | Alias for constraints that can refresh
 type RefreshSupport t m js
-   = (Prerender js t m, Reflex t, DomBuilder t m)
+   = (Prerender js t m, SupportsServantReflex t m)
 
 is4xxErr :: ReqResult () a -> Bool
 is4xxErr =

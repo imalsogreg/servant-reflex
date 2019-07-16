@@ -20,14 +20,14 @@ import           JSDOM.Generated.Document    (getLocation)
 import           JSDOM.Types                 (Location, liftDOM)
 import           Language.Javascript.JSaddle (MonadJSM, ( # ))
 import           Reflex
-import           Reflex.Dom.Builder.Class
+import           Reflex.Dom.Prerender
 import           Reflex.Dom.Widget.Basic
 import           Reflex.Dom.Xhr
 import           Servant.Reflex
 
 -- | Alias for constraints that can refresh
-type RefreshSupport t m
-   = (MonadJSM m, MonadHold t m, DomBuilder t m, SupportsServantReflex t m)
+type RefreshSupport t m js
+   = (Prerender js t m, SupportsServantReflex t m)
 
 is4xxErr :: ReqResult () a -> Bool
 is4xxErr =
@@ -58,20 +58,20 @@ isDecodeError = maybe False (Text.isInfixOf "Error in $") . reqFailure
 --   This assumes client errros aren't used in your app logic,
 --   for more flexibility see 'reloadOnResponse'
 reloadOnAPIError ::
-     (MonadJSM m, RefreshSupport t m)
+     RefreshSupport t m js
   => Event t (ReqResult () a)
   -> m (Event t (ReqResult () a))
-reloadOnAPIError =
+reloadOnAPIError evt = fmap switchDyn $ prerender (pure never) $
   reloadOnResponse
-    (\req -> (is4xxErr req && (not $ isAuthErr req)) || isDecodeError req)
+    (\req -> (is4xxErr req && (not $ isAuthErr req)) || isDecodeError req) evt
 
 -- | Reload and clears the cache if the predicate returns true
 reloadOnResponse ::
-     (MonadJSM m, RefreshSupport t m)
+     RefreshSupport t m js
   => (ReqResult () a -> Bool)
   -> Event t (ReqResult () a)
   -> m (Event t (ReqResult () a))
-reloadOnResponse predic reqResult = do
+reloadOnResponse predic reqResult = fmap switchDyn $ prerender (pure never) $ do
   void $
     widgetHold blank $
     ffor reqResult $ \req ->

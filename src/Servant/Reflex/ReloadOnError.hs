@@ -11,6 +11,7 @@ module Servant.Reflex.ReloadOnError
   , isAuthErr
   , is4xxErr
   , isDecodeError
+  , locationReload
   ) where
 
 import           Control.Monad               (join, void)
@@ -76,7 +77,7 @@ reloadOnResponse predic reqResult = do
     widgetHold blank $
     ffor reqResult $ \req ->
       if predic req
-        then clearCacheReload
+        then locationReload True
         else pure ()
   pure reqResult
 
@@ -90,8 +91,8 @@ reload' self bool = liftDOM $ void $ self # funName $ bool
 -- | Refresh and clear the browser cache, eg all assets will be reloaded.
 --   this could be used for example once you received a client error,
 --   it probably means you've got outdated code.
-clearCacheReload :: MonadJSM m => m ()
-clearCacheReload = do
+locationReload :: MonadJSM m => Bool -> m ()
+locationReload isClearReload = do
   mayWin <- currentDocument
   loc <- sequence $ getLocation <$> mayWin
-  maybe (pure ()) (flip reload' True) $ join loc
+  maybe (pure ()) (flip reload' isClearReload) $ join loc

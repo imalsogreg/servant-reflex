@@ -19,6 +19,7 @@ import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Data.Bifunctor             (first)
 import qualified Data.ByteString.Builder    as Builder
 import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.ByteString            (ByteString)
 import qualified Data.Map                   as Map
 import           Data.Maybe                 (catMaybes, fromMaybe)
 import           Data.Functor.Compose
@@ -244,7 +245,7 @@ reqToReflexRequest reqMeth reqHost req =
                                                        , _xhrRequestConfig_user = Nothing
                                                        , _xhrRequestConfig_password = Nothing
                                                        , _xhrRequestConfig_responseType = Just XhrResponseType_ArrayBuffer
-                                                       , _xhrRequestConfig_sendData = ""
+                                                       , _xhrRequestConfig_sendData = mempty
                                                        , _xhrRequestConfig_withCredentials = False
                                                        }
         Just rBody -> liftA2 mkConfigBody xhrHeaders rBody
@@ -335,9 +336,9 @@ performSomeRequestsAsync' opts newXhr req = performEventAsync $ ffor req $ \hrs 
 
 
 
-type XhrPayload = T.Text
+type XhrPayload = ByteString
 bytesToPayload :: BL.ByteString -> XhrPayload
-bytesToPayload = TE.decodeUtf8 . BL.toStrict
+bytesToPayload = BL.toStrict
 
 
 performRequestsCT

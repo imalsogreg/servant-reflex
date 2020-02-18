@@ -4,14 +4,19 @@
 
 ## `servant-reflex` lets you share your `servant` APIs with the frontend
 
-Keeping your frontend in sync with your API server can be difficult - when the API changes its input parameters or return type, XHR requests from the frontend will fail at runtime. If your API is defined by [servant](haskell-servant.readthedocs.io) combinators, you can use `servant-reflex` to share the API between the server and frontend. 
-Syncronization between is checked at compile time, and rather than building XHR requests by hand, API endpoints are available behind `reflex`'s FRP semantics.
-
+Keeping your frontend in sync with your API server can be difficult - when the
+API changes its input parameters or return type, XHR requests from the
+frontend will fail at runtime. If your API is defined by
+[servant](haskell-servant.readthedocs.io) combinators, you can use
+`servant-reflex` to share the API between the server and frontend.
+Syncronization between is checked at compile time, and rather than building XHR
+requests by hand, API endpoints are available behind `reflex`'s FRP semantics.
 
 
 ## Example
 
-We have a webservice API defined in a module where both the server (compiled with ghc) and the frontend (compiled with ghcjs) can see it:
+We have a webservice API defined in a module where both the server (compiled
+with ghc) and the frontend (compiled with ghcjs) can see it:
 
 ```haskell
 type API = "getint"  :> Get '[JSON] Int
@@ -24,7 +29,8 @@ type API = "getint"  :> Get '[JSON] Int
       :<|> Raw
 ```
 
-`servant-reflex` then computes client functions that can query the API through an `XhrRequest`.
+`servant-reflex` then computes client functions that can query the API through
+an `XhrRequest`.
 
 ```haskell
 
@@ -37,7 +43,16 @@ type API = "getint"  :> Get '[JSON] Int
                                                         (constDyn (BasePath "/"))
 ```
 
-These client functions are computed from your API type. They manage serialization, `XhrRequest` generation, and deserialization for you. `a` parameters used in URL captures become `Dynamic t (Either Text a)` parameters in the client functions. `QueryFlag`, `QueryParams` and `QueryParam` API parameters map to `Dynamic t Bool`, `Dynamic t [a]` and `Dynamic t (QParam a)` respectively. These parameters to the client function are wrapped with failure possibility to allow you to indicate at any time whether input validation for that parameter has failed and no valid XHR request can be generated. The final parameter is a trigger event for the XHR request. The return value `Event t (ReqResult a)` contains responses from the API server.
+These client functions are computed from your API type. They manage
+serialization, `XhrRequest` generation, and deserialization for you. `a`
+parameters used in URL captures become `Dynamic t (Either Text a)` parameters
+in the client functions. `QueryFlag`, `QueryParams` and `QueryParam` API
+parameters map to `Dynamic t Bool`, `Dynamic t [a]` and `Dynamic t (QParam a)`
+respectively. These parameters to the client function are wrapped with failure
+possibility to allow you to indicate at any time whether input validation for
+that parameter has failed and no valid XHR request can be generated. The final
+parameter is a trigger event for the XHR request. The return value
+`Event t (ReqResult a)` contains responses from the API server.
 
 ```haskell
    -- No need to write these functions. servant-reflex creates them for you!
@@ -62,7 +77,13 @@ These client functions are computed from your API type. They manage serializatio
             -> m (Event t (ReqResult () Double))
 ```
 
-`ReqResult tag a` is defined in [`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42) and reports whether or not your request was sent (if validation fails, the request won't be sent), and how decoding of the response went. You can pattern match on these explicitly, but usually you'll want to use `fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the elimination functions to filter the result type you care about, like this:
+`ReqResult tag a` is defined in
+[`Servant.Common.Req`](https://github.com/imalsogreg/servant-reflex/blob/6d866e338edb9bf6fd8f8d5083ff0187b4d8c0d2/src/Servant/Common/Req.hs#L40-L42)
+and reports whether or not your request was sent (if validation fails, the
+request won't be sent), and how decoding of the response went. You can pattern
+match on these explicitly, but usually you'll want to use
+`fmapMaybe :: (a -> Maybe b) -> Event t a -> Event t b` and one of the
+elimination functions to filter the result type you care about, like this:
 
 ```haskell
   -- ... continued ...
@@ -80,7 +101,8 @@ These client functions are computed from your API type. They manage serializatio
     dynText =<< holdDyn "" (leftmost [errs, const "" <$> ys])
 ```
 
-This example builds some input fields to enter API parameters, buttons to trigger the API calls, and text elements to show the results:
+This example builds some input fields to enter API parameters, buttons to
+trigger the API calls, and text elements to show the results:
 
 ```haskell
   elClass "div" "int-demo" $ do
@@ -103,47 +125,53 @@ This example builds some input fields to enter API parameters, buttons to trigge
     display =<< holdDyn Nothing outputDouble
 ```
 
-For a great introduction to recative DOM building, see the [README](https://github.com/reflex-frp/reflex-platform) for the `reflex-platform`. For more information about servant, see their [documentation](http://haskell-servant.readthedocs.io/en/stable/). Thanks to the respective authors of these fabulous libraries.
+For a great introduction to recative DOM building, see the
+[README](https://github.com/reflex-frp/reflex-platform) for the
+`reflex-platform`. For more information about servant, see their
+[documentation](http://haskell-servant.readthedocs.io/en/stable/). Thanks to
+the respective authors of these fabulous libraries.
 
 
 ## Building the library and test server
 
-This repository comes with a small example of an API shared between a ghcjs-compiled frontend ([exec/](https://github.com/imalsogreg/servant-reflex/tree/master/exec)) and a ghc-compiled backend ([testserver/](https://github.com/imalsogreg/servant-reflex/tree/master/testserver). To build these components:
-
-
-First build the library:
-
-```
-git submodule update --init --recursive
-./build.sh
-```
-
-Then build the test server:
+This repository comes with a small example of an API shared between a
+ghcjs-compiled frontend
+([exec/](https://github.com/imalsogreg/servant-reflex/tree/master/exec)) and a
+ghc-compiled backend
+([testserver/](https://github.com/imalsogreg/servant-reflex/tree/master/testserver).
+To build these components, we will use the nix packages for the testserver. It
+manages the frontend build as a dependency.
 
 ```
-deps/reflex-platform/work-on ./overrides-ghc.nix ./testserver --command "cd testserver && cabal build"
+nix build -f travis.nix testserver -o server
 ```
 
-
-## Running the example site
-
-The server must be run from the directory where static assets live:
+Point it at the static directory and run it:
 
 ```
-cd testserver
-dist/build/back/back -p 8001
+STATIC_DIR=server/static server/back -p 8000
 ```
 
-And simply browse to `localhost:8001`
+Browse to [http://localhost:8000](http://localhost:8000) and click around.
+Open the firefox or chrome developer tools and examine the XHR activity
+under the Network tab.
 
-**For a larger example of a project that shares types between backend and frontend, see [hsnippet](https://github.com/mightybyte/hsnippet).**
+**For a larger example of a project that shares types between backend and
+frontend, see [hsnippet](https://github.com/mightybyte/hsnippet).**
 
 
 ## Tagging requests
 
-The input and the return type of a client function like `getDouble` are both event streams. The individual input events and responses occur at different times and aren't automatically paired up, but you can recover the relationship by tagging the requests.
+The input and the return type of a client function like `getDouble` are both
+event streams. The individual input events and responses occur at different
+times and aren't automatically paired up, but you can recover the
+relationship by tagging the requests.
 
-So far we have used an `Event t ()` to trigger sending a request. If we choose e.g. `Double` for the third `Proxy` argument to `client`, then `Event t Double` will be used to trigger requests, and each `ReqResult` will carry the tag of its request. Imagine we wanted to display not just the last "double" from `doubleIt`, but a whole table of valid inputs and their doubled responses:
+So far we have used an `Event t ()` to trigger sending a request. If we choose
+e.g. `Double` for the third `Proxy` argument to `client`, then `Event t Double`
+will be used to trigger requests, and each `ReqResult` will carry the tag of
+its request. Imagine we wanted to display not just the last "double" from
+`doubleIt`, but a whole table of valid inputs and their doubled responses:
 
 ```haskell
   ...
@@ -173,7 +201,10 @@ So far we have used an `Event t ()` to trigger sending a request. If we choose e
 
 ## Simultaneous requests
 
-`Servant.Reflex.Multi` provides an alternative client-generation function called `clientA` (client applicative). Choose a container type that has both `Applicative` and `Traversable` instances, and pass it to `clientA` through another `Proxy`. Our `sayHi` client function will then have this type:
+`Servant.Reflex.Multi` provides an alternative client-generation function
+called `clientA` (client applicative). Choose a container type that has both
+`Applicative` and `Traversable` instances, and pass it to `clientA` through
+another `Proxy`. Our `sayHi` client function will then have this type:
 
 ```haskell
 sayHi
@@ -184,4 +215,10 @@ sayHi
   -> m (Event t (f (ReqResult tag Text)))
 ```
 
-The dynamic params are each wrapped in `f`. For every firing of the trigger event `tag`, all of these parameters will be combined according to `f`'s `Applicative` instance (when `f` is `[]`, you will get all combinations of all parameters taken together as a request; when `f` is `ZipList`, the Nth elemens of each parameters list will be taken together as a request). Using this interface, you can trigger many XHR's from a single event occurence, and expect the responses to be structured the same way as the requests.
+The dynamic params are each wrapped in `f`. For every firing of the trigger
+event `tag`, all of these parameters will be combined according to `f`'s
+`Applicative` instance (when `f` is `[]`, you will get all combinations of
+all parameters taken together as a request; when `f` is `ZipList`, the Nth
+elemens of each parameters list will be taken together as a request). Using
+this interface, you can trigger many XHR's from a single event occurence, and
+expect the responses to be structured the same way as the requests.

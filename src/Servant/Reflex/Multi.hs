@@ -79,7 +79,7 @@ import           Reflex.Dom.Core                                 (Dynamic,
                                                                   attachPromptlyDynWith,
                                                                   constDyn)
 ------------------------------------------------------------------------------
-import           Servant.Checked.Exceptions.Internal.Envelope    (Envelope)
+import           Servant.Checked.Exceptions.Internal             (Envelope)
 import           Servant.Checked.Exceptions.Internal.Servant.API (NoThrow,
                                                                   Throwing,
                                                                   ThrowingNonterminal,

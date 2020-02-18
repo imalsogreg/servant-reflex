@@ -18,13 +18,14 @@ module Servant.Common.Req where
 
 -------------------------------------------------------------------------------
 import           Control.Applicative               (liftA2, liftA3)
+import           Control.Arrow                     ((&&&))
 import           Control.Concurrent
 import           Control.Monad                     (join)
 import           Control.Monad.IO.Class            (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Bifunctor                    (first)
 import qualified Data.ByteString                   as BS
-import qualified Data.ByteString.Builder           as BB
+import qualified Data.ByteString.Builder           as Builder
 import           Data.ByteString.Lazy              (ByteString)
 import qualified Data.ByteString.Lazy.Char8        as BL
 import           Data.Functor.Compose
@@ -35,7 +36,7 @@ import           Data.Monoid                       ((<>))
 import           Data.Proxy                        (Proxy (..))
 import           Data.Text                         (Text)
 import qualified Data.Text                         as T
-import qualified Data.Text.Encoding                as T
+import qualified Data.Text.Encoding                as TE
 import qualified Data.Text.Lazy                    as TL
 import           Data.Traversable                  (forM)
 import qualified Language.Javascript.JSaddle       as JS
@@ -112,6 +113,13 @@ reqFailure (ResponseFailure _ s _) = Just s
 reqFailure (RequestFailure  _ s)   = Just s
 reqFailure _                       = Nothing
 
+------------------------------------------------------------------------------
+-- | Simple filter/accessor like 'reqFailure', but keeping the request tag
+reqFailure' :: ReqResult tag a -> Maybe (tag,Text)
+reqFailure' (ResponseFailure tag s _) = Just (tag,s)
+reqFailure' (RequestFailure  tag s)   = Just (tag,s)
+reqFailure' _                         = Nothing
+
 
 ------------------------------------------------------------------------------
 -- | Simple filter/accessor for the raw XHR response
@@ -173,7 +181,7 @@ prependToPathParts p req =
   req { reqPathParts = p : reqPathParts req }
 
 addHeader :: (ToHttpApiData a, Reflex t) => Text -> Dynamic t (Either Text a) -> Req t -> Req t
-addHeader name val req = req { headers = (name, (fmap . fmap) (T.decodeUtf8 . toHeader) val) : headers req }
+addHeader name val req = req { headers = (name, (fmap . fmap) (TE.decodeUtf8 . toHeader) val) : headers req }
 
 reqToReflexRequest
       :: forall t. Reflex t
@@ -267,8 +275,8 @@ reqToReflexRequest reqMeth reqHost req@(Req _ _ _ (reqBody :: Maybe (Dynamic t (
       mkAuth _ (Left e) = Left e
       mkAuth Nothing r  = r
       mkAuth (Just (BasicAuthData u p)) (Right config) = Right $ config
-        { _xhrRequestConfig_user     = Just $ T.decodeUtf8 u
-        , _xhrRequestConfig_password = Just $ T.decodeUtf8 p}
+        { _xhrRequestConfig_user     = Just $ TE.decodeUtf8 u
+        , _xhrRequestConfig_password = Just $ TE.decodeUtf8 p}
 
       addAuth :: Dynamic t (Either Text (XhrRequestConfig x))
               -> Dynamic t (Either Text (XhrRequestConfig x))
@@ -415,6 +423,18 @@ evalResponse decodeRes (tag, xhr) =
                      else ResponseFailure tag errMsg xhr
     in respPayld
 
+------------------------------------------------------------------------------
+-- | Utility for simultaneously accessing/filtering Success and Failure
+-- response 'Event's,
+fanReqResult :: Reflex t => Event t (ReqResult tag a) -> (Event t Text, Event t a)
+fanReqResult = fmapMaybe reqFailure &&& fmapMaybe reqSuccess
+
+------------------------------------------------------------------------------
+-- | Utility for simultaneously accessing/filtering Success and Failure
+-- response 'Event's, but keeping the request tag
+fanReqResult' :: Reflex t => Event t (ReqResult tag a) -> (Event t (tag, Text), Event t (tag, a))
+fanReqResult' = fmapMaybe reqFailure' &&& fmapMaybe reqSuccess'
+
 
 -- | Similar to 'Servant.API.ContentType.MimeUnrender' but with the differnce that
 -- the second argument expects a JSString instead of ByteString.
@@ -429,7 +449,7 @@ instance FromJSON a => MimeUnrender JSON a where
 -- Note that the @mimeUnrender p (mimeRender p x) == Right x@ law only
 -- holds if every element of x is non-null (i.e., not @("", "")@)
 instance FromForm a => MimeUnrender FormUrlEncoded a where
-    mimeUnrender _ = first T.unpack . urlDecodeAsForm . BB.toLazyByteString . T.encodeUtf8Builder . JS.textFromJSString
+    mimeUnrender _ = first T.unpack . urlDecodeAsForm . Builder.toLazyByteString . TE.encodeUtf8Builder . JS.textFromJSString
 
 -- | @left show . TextL.decodeUtf8'@
 instance MimeUnrender PlainText TL.Text where
@@ -445,11 +465,11 @@ instance MimeUnrender PlainText String where
 
 -- | @Right . id@
 instance MimeUnrender OctetStream ByteString where
-    mimeUnrender _ = pure . BB.toLazyByteString . T.encodeUtf8Builder . JS.textFromJSString
+    mimeUnrender _ = pure . Builder.toLazyByteString . TE.encodeUtf8Builder . JS.textFromJSString
 
 -- | @Right . toStrict@
 instance MimeUnrender OctetStream BS.ByteString where
-    mimeUnrender _ = pure . T.encodeUtf8 . JS.textFromJSString
+    mimeUnrender _ = pure . TE.encodeUtf8 . JS.textFromJSString
 
 note :: e -> Maybe a -> Either e a
 note e Nothing  = Left e
@@ -459,8 +479,8 @@ fmapL :: (e -> e') -> Either e a -> Either e' a
 fmapL _ (Right a) = Right a
 fmapL f (Left e)  = Left (f e)
 
-builderToText :: BB.Builder -> T.Text
-builderToText = T.decodeUtf8 . BL.toStrict . BB.toLazyByteString
+builderToText :: Builder.Builder -> T.Text
+builderToText = TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString
 
 escape :: T.Text -> T.Text
-escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . T.decodeUtf8 . BL.toStrict . BB.toLazyByteString . toEncodedUrlPiece
+escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString . toEncodedUrlPiece

@@ -1,1 +1,2 @@
-(import ./travis.nix {nativeCompiler = "ghc";}).ghcPkgs.servant-reflex.env
+{ nativeCompiler ? "ghc8_6" }:
+(import ./travis.nix { inherit nativeCompiler; }).ghcPkgs.servant-reflex.env

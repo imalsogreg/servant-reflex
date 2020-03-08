@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeOperators     #-}
 
 import           Control.Monad.IO.Class            (liftIO)
+import           Control.Monad.Reader              (reader)
 import           Data.Aeson
 import           Data.Bool
 import           Data.Char                         (toUpper)
@@ -26,6 +27,7 @@ import           Servant
 import           Servant.Server ()
 import           System.Directory
 -- import           Snap.Util.FileServe
+import           System.Environment                (lookupEnv)
 import           API
 import           Snap                              hiding (addHeader)
 
@@ -41,7 +43,7 @@ instance ToJSON Greet
 testApi :: Proxy API
 testApi = Proxy
 
-data App = App
+data App = App { appStaticDir :: String }
 
 -- Server-side handlers.
 --
@@ -51,7 +53,8 @@ data App = App
 -- Each handler runs in the 'ExceptT ServantErr IO' monad.
 server :: Server API '[BasicAuthCheck (Handler App App) ()] (Handler App App)
 server = return () :<|> return 100 :<|> dblint :<|> sayhi :<|> dbl
-    :<|> multi :<|> qna :<|> serveSecret :<|> serveDirectory "static"
+    :<|> multi :<|> qna :<|> serveSecret
+    :<|> statics
   where sayhi :: Maybe Text -> [Text] -> Bool -> Handler App App Text
         sayhi nm greetings withGusto = case nm of
           Nothing -> return ("Sorry, who are you?" :: Text)
@@ -77,6 +80,9 @@ server = return () :<|> return 100 :<|> dblint :<|> sayhi :<|> dbl
           req <- getRequest
           liftIO $ putStrLn (show req)
           return 101
+        statics = do
+          staticDir <- reader appStaticDir
+          serveDirectory staticDir
 
 -- Turn the server into a WAI app. 'serve' is provided by servant,
 -- more precisely by the Servant.Server module.
@@ -86,12 +92,11 @@ test = serveSnapWithContext testApi
 
 initApp :: SnapletInit App App
 initApp = makeSnaplet "myapp" "example" Nothing $ do
-  liftIO $ print =<< listDirectory "."
-  liftIO $ print =<< listDirectory "static"
+  staticDir <- fromMaybe "static" <$> liftIO (lookupEnv "STATIC_DIR")
   addRoutes [("", test)
             ,("", serveDirectory "static")
             ]
-  return App
+  return (App staticDir)
 
 -- Put this all to work!
 main :: IO ()

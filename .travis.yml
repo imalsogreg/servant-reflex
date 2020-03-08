@@ -1,30 +1,17 @@
 language: nix
-
-cache: false
-
-
-before_install:
- - unset CC
+nix: 2.1.1
+sudo: require
 
 install:
+  - sudo cp -rT $TRAVIS_BUILD_DIR/nix /etc/nix
+
+before_script:
+  - git config --global user.email "travis-ci@example.com"
+  - git config --global user.name "Travis-CI"
 
 script:
- - git clone https://github.com/reflex-frp/reflex-platform
- - cd reflex-platform && sudo echo "Yes" | ./try-reflex --command "exit 0"
- - strace nix build -f ../release.nix servant-reflex
-
- - nix build -f ./release.nix servant-reflex --substituters https://cache.nixos.org --substituters https://nixcache.reflex-frp.org
- - nix build -f ./release.nix testresults
- - git config --global user.email "travis-ci@example.com"
- - git config --global user.name "Travis-CI"
-
-cache:
-  directories:
-  - /nix
-  - $HOME/.cabal/packages
-  - $HOME/.cabal/store
-
-env:
-  global:
-    - ENCRYPTION_LABEL: "3c89d919c82e"
-    - COMMIT_AUTHOR_EMAIL: "imalsogreg@gmail.com"
+  - nix-env -iA cachix -f https://cachix.org/api/v1/install
+  - cachix use imalsogreg
+  - nix-build travis.nix -A build
+  - nix-build travis.nix -A testserver
+  - nix-build travis.nix -A testresults

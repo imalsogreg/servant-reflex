@@ -23,7 +23,7 @@ import Servant.API
 import API
 import Data.Proxy
 import Text.Read (readMaybe)
-import Reflex.Dom hiding (run)
+import Reflex.Dom.Core hiding (run)
 ------------------------------------------------------------------------------
 import Servant.Reflex
 import Servant.Reflex.Multi
@@ -236,7 +236,6 @@ run = mdo
 
   -- Name the computed API client functions
   let tweakRequest = ClientOptions $ \r -> do
-          -- putStrLn ("Got req: " ++ show r)
           return $ r & withCredentials .~ True
   let (getUnit :<|> getInt :<|> dblInt :<|> sayhi :<|> dbl
        :<|> multi :<|> qna :<|> secret :<|> doRaw) =

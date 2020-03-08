@@ -31,7 +31,6 @@ instance FromJSON Answer where
 -- | API spec for server, client, and docs
 type API = "getunit" :> Get '[JSON] ()
       :<|> "getint"  :> Get '[JSON] Int
-      :<|> "dblint"  :> Capture "anint" Int :> Get '[JSON] Int
       :<|> "sayhi"   :> QueryParam  "username" Text
                      :> QueryParams "greetings" Text
                      :> QueryFlag   "gusto"
@@ -40,9 +39,7 @@ type API = "getunit" :> Get '[JSON] ()
                     :> Post '[JSON] Double
       :<|> "a" :> "b" :> QueryFlag "gusto" :> Get '[JSON] Text
       :<|> "qna" :> ReqBody '[JSON] Question
-                 :> Header "qnum" Int
-                 :> Header "is-favorite" Bool
-                 :> Post '[JSON] (Headers '[Header "anum" Int, Header "was-favorite" Bool] Answer)
+                 :> Post '[JSON] Answer
       :<|> "secret" :> BasicAuth "realm" () :> Get '[JSON] Int
       :<|> Raw
 

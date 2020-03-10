@@ -18,7 +18,11 @@ Flag Example
 library
   exposed-modules:
     Servant.Reflex
+    Servant.Reflex.Examples
     Servant.Reflex.Multi
+    Servant.Reflex.Internal.TupleRequest
+    Servant.Reflex.TupleRequest
+    Servant.Reflex.TupleRequestMulti
 
   other-modules:
     Servant.Common.BaseUrl

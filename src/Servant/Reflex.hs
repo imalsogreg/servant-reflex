@@ -101,7 +101,7 @@ import           Servant.Common.Req      (ClientOptions(..),
 -- >
 -- > getAllBooks :: Event t l -> m (Event t (l, ReqResult [Book]))
 -- > postNewBook :: Dynamic t (Maybe Book) -> Event t l
---               -> m (Event t (l, ReqResult Book)))
+-- >             -> m (Event t (l, ReqResult Book)))
 -- > (getAllBooks :<|> postNewBook) = client myApi host
 -- >   where host = constDyn $ BaseUrl Http "localhost" 8080
 client

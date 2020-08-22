@@ -1,9 +1,7 @@
-# Servant-snap is stuck a bit behind atm. But we have a fork that mostly works
-# except for streaming, which is good enough for this test server. See:
-# https://github.com/haskell-servant/servant-snap/issues/20
+# Servant-snap is marked broken in nixpkgs
 { nixpkgs ? import <nixpkgs> {}}: self: super:
 self.callCabal2nix "servant-snap" (nixpkgs.fetchgit {
-  url    = "https://github.com/antislava/servant-snap.git";
-  rev    = "fc9658e8f52ebce9e4f304ea0c6705d697d4fa84";
-  sha256 = "0zlipmx1fb73mhpnndwmdmigxxrsdnsnb1157pgsrxpx89l9pjig";
+  url    = "https://github.com/haskell-servant/servant-snap.git";
+  rev    = "af5172a6de5bb2a07eb1bf4c85952075ec6ecdf3";
+  sha256 = "sha256-fzzQGwG8Ko72OO/kwLMG52eNZSt3F2dxhNgM9gaO4yQ=";
 }) {}

@@ -6,7 +6,7 @@
 }:
 mkDerivation {
   pname = "servant-reflex";
-  version = "0.3.4";
+  version = "0.3.5";
   src = builtins.filterSource
         (path: type:
         baseNameOf path != "result"

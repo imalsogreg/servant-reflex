@@ -85,15 +85,14 @@ baseUrlWidget = elClass "div" "base-url" $ do
   where pathWidget :: m (Dynamic t BaseUrl)
         pathWidget = do
           text "Url base path"
-          t <- textInput (def {_textInputConfig_attributes =
-                          constDyn ("placeholder" =: "/a/b")})
+          t <- inputElement def
           return $ BasePath <$> value t
         fullUrlWidget :: m (Dynamic t BaseUrl)
         fullUrlWidget = do
           schm <- dropdown Https (constDyn $ Https =: "https" <> Http =: "http") def
-          srv  <- textInput def {_textInputConfig_attributes = constDyn $ "placeholder" =: "example.com"}
+          srv  <- inputElement def
           text ":"
-          prt  <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "80"}
+          prt  <- inputElement def
           port :: Dynamic t Int <- holdDyn 80 (fmapMaybe (readMaybe . T.unpack) $ updated (value prt))
-          path <- textInput def { _textInputConfig_attributes = constDyn $ "placeholder" =: "a/b" }
+          path <- inputElement def
           return $ BaseFullUrl <$> value schm <*> value srv <*> port <*> value path

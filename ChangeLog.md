@@ -1,3 +1,11 @@
+0.3.5
+-----
+
+ - Require reflex-dom-core >= 0.6 (for internal handling of case-insensitive headers)
+ - Require servant >= 0.16
+ - Eliminate use of deprecated widgets from reflex-dom-core
+ - Bump the version of reflex-platform used in nix-shell and test suite
+
 0.3.4
 -----
 

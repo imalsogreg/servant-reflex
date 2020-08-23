@@ -1,17 +1,16 @@
 language: nix
-nix: 2.1.1
+nix: 2.3.6
 sudo: require
 
-install:
+before_install:
   - sudo cp -rT $TRAVIS_BUILD_DIR/nix /etc/nix
 
 before_script:
+  - sudo systemctl restart nix-daemon.service
   - git config --global user.email "travis-ci@example.com"
   - git config --global user.name "Travis-CI"
 
 script:
-  - nix-env -iA cachix -f https://cachix.org/api/v1/install
-  - cachix use imalsogreg
   - nix-build travis.nix -A build
   - nix-build travis.nix -A testserver
   - nix-build travis.nix -A testresults

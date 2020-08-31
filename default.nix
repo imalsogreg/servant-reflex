@@ -1,8 +1,8 @@
-{ mkDerivation, aeson, base, bytestring, case-insensitive
-, containers, data-default, exceptions, ghcjs-dom, http-api-data
-, http-media, jsaddle, mtl, network-uri, reflex, reflex-dom-core
-, safe, scientific, servant, servant-auth, stdenv
-, string-conversions, text, transformers
+{ mkDerivation, aeson, base, bytestring, case-insensitive, containers
+, data-default, exceptions, ghcjs-dom, http-api-data, http-media
+, jsaddle, jsaddle-dom, mtl, network-uri, reflex, reflex-dom
+, reflex-dom-core , safe, scientific, servant, servant-auth, stdenv
+, string-conversions, text , transformers, megaparsec, wreq
 }:
 mkDerivation {
   pname = "servant-reflex";
@@ -17,9 +17,9 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base bytestring case-insensitive containers data-default exceptions
-    ghcjs-dom http-api-data http-media jsaddle mtl network-uri reflex
-    reflex-dom-core safe servant servant-auth string-conversions text
-    transformers
+    ghcjs-dom http-api-data http-media jsaddle jsaddle-dom mtl
+    network-uri reflex reflex-dom-core safe servant servant-auth
+    string-conversions text transformers megaparsec wreq
   ];
   executableHaskellDepends = [
     aeson base reflex reflex-dom-core scientific servant text

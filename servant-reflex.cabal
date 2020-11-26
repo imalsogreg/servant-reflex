@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.3.5
+Version: 0.3.6
 Synopsis: servant API generator for reflex apps
 Description: Generate reflex-compatible client functions from servant API descriptions
 License: BSD3
@@ -36,7 +36,7 @@ library
     jsaddle             >= 0.8  && < 0.10,
     mtl                 >= 2.2.1 && < 2.3,
     network-uri         >= 2.6  && < 2.7,
-    reflex              >= 0.5  && < 0.8,
+    reflex              >= 0.5  && < 0.9,
     reflex-dom-core     >= 0.6  && < 0.7,
     safe                >= 0.3.9 && < 0.4,
     servant             >= 0.16  && < 0.18,

@@ -48,6 +48,7 @@ in
     inherit reflexPlatform ghcPkgs ghcjsPkgs;
 
     build       = ghcjsPkgs.servant-reflex;
+    buildGhc    = ghcPkgs.servant-reflex;
     testserver  = ghcPkgs.testserver;
     testdriver  = ghcPkgs.testdriver;
     inherit testresults;

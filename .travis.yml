@@ -12,5 +12,6 @@ before_script:
 
 script:
   - nix-build travis.nix -A build
+  - nix-build travis.nix -A buildGhc
   - nix-build travis.nix -A testserver
   - nix-build travis.nix -A testresults

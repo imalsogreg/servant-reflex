@@ -21,7 +21,8 @@ import Servant.API
 import API
 import Data.Proxy
 import Text.Read (readMaybe)
-import Reflex.Dom.Core hiding (run)
+import Reflex.Dom.Core hiding (run, mainWidget)
+import Reflex.Dom (mainWidget)
 ------------------------------------------------------------------------------
 import Servant.Reflex
 import Servant.Reflex.Multi

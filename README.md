@@ -7,7 +7,7 @@
 Keeping your frontend in sync with your API server can be difficult - when the
 API changes its input parameters or return type, XHR requests from the
 frontend will fail at runtime. If your API is defined by
-[servant](haskell-servant.readthedocs.io) combinators, you can use
+[servant](https://haskell-servant.readthedocs.io) combinators, you can use
 `servant-reflex` to share the API between the server and frontend.
 Syncronization between is checked at compile time, and rather than building XHR
 requests by hand, API endpoints are available behind `reflex`'s FRP semantics.

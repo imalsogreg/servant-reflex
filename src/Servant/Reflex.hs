@@ -39,34 +39,36 @@ module Servant.Reflex
 
 ------------------------------------------------------------------------------
 import           Control.Applicative
-import           Data.Monoid             ((<>))
-import qualified Data.Set                as Set
-import qualified Data.Text.Encoding      as E
 import qualified Data.CaseInsensitive    as CI
 import           Data.Functor.Identity
-import           Data.Proxy              (Proxy (..))
 import qualified Data.Map                as Map
+import           Data.Monoid             ((<>))
+import           Data.Proxy              (Proxy (..))
+import qualified Data.Set                as Set
 import           Data.Text               (Text)
 import qualified Data.Text               as T
+import qualified Data.Text.Encoding      as E
 import           GHC.Exts                (Constraint)
 import           GHC.TypeLits            (KnownSymbol, symbolVal)
-import           Servant.API             ((:<|>)(..),(:>), BasicAuth,
-                                          BasicAuthData, BuildHeadersTo(..),
-                                          Capture, contentType, Header,
-                                          Headers(..), HttpVersion, IsSecure,
-                                          MimeRender(..), MimeUnrender,
+import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
+                                          BasicAuthData, BuildHeadersTo (..),
+                                          Capture, Header, Headers (..),
+                                          HttpVersion, IsSecure,
+                                          MimeRender (..), MimeUnrender,
                                           NoContent, QueryFlag, QueryParam,
-                                          QueryParams, Raw, ReflectMethod(..),
+                                          QueryParams, Raw, ReflectMethod (..),
                                           RemoteHost, ReqBody,
-                                          ToHttpApiData(..), Vault, Verb)
+                                          ToHttpApiData (..), Vault, Verb,
+                                          contentType)
+import           Servant.API.Description (Summary)
 import qualified Servant.Auth            as Auth
 
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
-                                          XhrRequest(..),
-                                          XhrResponseHeaders(..),
-                                          XhrResponse(..), attachPromptlyDynWith, constDyn, ffor, fmapMaybe,
-                                          leftmost, performRequestsAsync,
-                                          )
+                                          XhrRequest (..), XhrResponse (..),
+                                          XhrResponseHeaders (..),
+                                          attachPromptlyDynWith, constDyn, ffor,
+                                          fmapMaybe, leftmost,
+                                          performRequestsAsync)
 ------------------------------------------------------------------------------
 import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
                                           showBaseUrl,
@@ -326,6 +328,19 @@ instance HasClient t m sublayout tag
 
   clientWithRouteAndResultHandler Proxy =
     clientWithRouteAndResultHandler (Proxy :: Proxy sublayout)
+
+-- | Using a 'Summary' combinator in your API doesn't affect the client
+-- functions.
+instance (HasClient t m sublayout tag, KnownSymbol sym)
+  => HasClient t m (Summary sym :> sublayout) tag where
+
+  type Client t m (Summary sym :> sublayout) tag =
+    Client t m sublayout tag
+
+  clientWithRouteAndResultHandler Proxy =
+    clientWithRouteAndResultHandler (Proxy :: Proxy sublayout)
+
+
 
 
 -- | If you use a 'QueryParam' in one of your endpoints in your API,

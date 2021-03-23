@@ -37,28 +37,30 @@ module Servant.Reflex.Multi (
     ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative    (liftA2)
-import           Data.Functor.Compose   (Compose (..), getCompose)
-import           Data.Proxy             (Proxy (..))
-import qualified Data.Set               as Set
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import qualified Data.Text.Encoding     as E
-import           GHC.TypeLits           (KnownSymbol, symbolVal)
-import           Servant.API            ((:<|>) (..), (:>), BasicAuth,
-                                         BasicAuthData, BuildHeadersTo (..),
-                                         Capture, Header, Headers (..),
-                                         HttpVersion, IsSecure, MimeRender (..),
-                                         MimeUnrender, NoContent, QueryFlag,
-                                         QueryParam, QueryParams, Raw,
-                                         ReflectMethod (..), RemoteHost,
-                                         ReqBody, ToHttpApiData (..), Vault,
-                                         Verb, contentType)
+import           Control.Applicative     (liftA2)
+import           Data.Functor.Compose    (Compose (..), getCompose)
+import           Data.Proxy              (Proxy (..))
+import qualified Data.Set                as Set
+import           Data.Text               (Text)
+import qualified Data.Text               as T
+import qualified Data.Text.Encoding      as E
+import           GHC.TypeLits            (KnownSymbol, symbolVal)
+import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
+                                          BasicAuthData, BuildHeadersTo (..),
+                                          Capture, Header, Headers (..),
+                                          HttpVersion, IsSecure,
+                                          MimeRender (..), MimeUnrender,
+                                          NoContent, QueryFlag, QueryParam,
+                                          QueryParams, Raw, ReflectMethod (..),
+                                          RemoteHost, ReqBody,
+                                          ToHttpApiData (..), Vault, Verb,
+                                          contentType)
+import           Servant.API.Description (Summary)
 
-import           Reflex.Dom.Core        (Dynamic, Event, Reflex,
-                                         XhrRequest (..),
-                                         XhrResponseHeaders (..),
-                                         attachPromptlyDynWith, constDyn)
+import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
+                                          XhrRequest (..),
+                                          XhrResponseHeaders (..),
+                                          attachPromptlyDynWith, constDyn)
 ------------------------------------------------------------------------------
 import           Servant.Common.BaseUrl (BaseUrl (..), Scheme (..),
                                          SupportsServantReflex)
@@ -234,6 +236,17 @@ instance HasClientMulti t m sublayout f tag
   => HasClientMulti t m (HttpVersion :> sublayout) f tag where
 
   type ClientMulti t m (HttpVersion :> sublayout) f tag =
+    ClientMulti t m sublayout f tag
+
+  clientWithRouteMulti Proxy q f tag =
+    clientWithRouteMulti (Proxy :: Proxy sublayout) q f tag
+
+
+------------------------------------------------------------------------------
+instance (HasClientMulti t m sublayout f tag, KnownSymbol sym)
+  => HasClientMulti t m (Summary sym :> sublayout) f tag where
+
+  type ClientMulti t m (Summary sym :> sublayout) f tag =
     ClientMulti t m sublayout f tag
 
   clientWithRouteMulti Proxy q f tag =

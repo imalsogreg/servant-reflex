@@ -50,10 +50,10 @@ import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as E
 import           GHC.Exts                (Constraint)
 import           GHC.TypeLits            (KnownSymbol, symbolVal)
-import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
-                                          BasicAuthData, BuildHeadersTo (..),
-                                          Capture, Header, Headers (..),
-                                          HttpVersion, IsSecure,
+import           Servant.API             ((:<|>) (..), (:>), AuthProtect,
+                                          BasicAuth, BasicAuthData,
+                                          BuildHeadersTo (..), Capture, Header,
+                                          Headers (..), HttpVersion, IsSecure,
                                           MimeRender (..), MimeUnrender,
                                           NoContent, QueryFlag, QueryParam,
                                           QueryParams, Raw, ReflectMethod (..),
@@ -70,25 +70,21 @@ import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           fmapMaybe, leftmost,
                                           performRequestsAsync)
 ------------------------------------------------------------------------------
-import           Servant.Common.BaseUrl  (BaseUrl(..), Scheme(..), baseUrlWidget,
-                                          showBaseUrl,
-                                          SupportsServantReflex)
-import           Servant.Common.Req      (ClientOptions(..),
-                                          defaultClientOptions,
-                                          Req, ReqResult(..), QParam(..),
-                                          QueryPart(..), addHeader, authData,
-                                          defReq, evalResponse, prependToPathParts,
-                                          -- performRequestCT,
+import           Servant.Common.BaseUrl  (BaseUrl (..), Scheme (..),
+                                          SupportsServantReflex, baseUrlWidget,
+                                          showBaseUrl)
+import           Servant.Common.Req      (ClientOptions (..), QParam (..),
+                                          QueryPart (..), Req, ReqResult (..),
+                                          addHeader, authData, defReq,
+                                          defaultClientOptions, evalResponse,
                                           performRequestsCT,
-                                          -- performRequestNoBody,
                                           performRequestsNoBody,
                                           performSomeRequestsAsync,
-                                          qParamToQueryPart, reqBody,
-                                          reqSuccess, reqFailure,
-                                          reqMethod, respHeaders,
-                                          response,
-                                          reqTag,
-                                          qParams, withCredentials)
+                                          prependToPathParts, qParamToQueryPart,
+                                          qParams, reqBody, reqFailure,
+                                          reqMethod, reqSuccess, reqTag,
+                                          respHeaders, response,
+                                          withCredentials)
 
 
 -- * Accessing APIs as a Client
@@ -574,6 +570,17 @@ instance (HasClient t m api tag, Reflex t)
       where
         req'    = req { authData = Just authdata }
 
+instance (HasClient t m api tag, Reflex t)
+      => HasClient t m (AuthProtect realm :> api) tag where
+
+  type Client t m (AuthProtect realm :> api) tag =
+    Dynamic t (Either Text Text) -> Client t m api tag
+
+  clientWithRouteAndResultHandler Proxy q t req baseurl opts wrap token =
+    clientWithRouteAndResultHandler (Proxy :: Proxy api) q t req' baseurl opts wrap
+      where
+        req' = addHeader "Authorization" token req
+
 -- instance HasClient t m subapi =>
 --   HasClient t m (WithNamedConfig name config subapi) where
 
@@ -622,4 +629,3 @@ type family HasCookieAuth xs :: Constraint where
   HasCookieAuth '[]         = CookieAuthNotEnabled
 
 class CookieAuthNotEnabled
-

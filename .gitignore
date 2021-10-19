@@ -7,3 +7,5 @@ log
 *.stats
 out
 /.stack-work/
+TAGS
+dist-newstyle

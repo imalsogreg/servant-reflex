@@ -61,7 +61,6 @@ import           Servant.API             ((:<|>) (..), (:>), BasicAuth,
                                           ToHttpApiData (..), Vault, Verb,
                                           contentType)
 import           Servant.API.Description (Summary)
-import qualified Servant.Auth            as Auth
 
 import           Reflex.Dom.Core         (Dynamic, Event, Reflex,
                                           XhrRequest (..), XhrResponse (..),
@@ -90,6 +89,11 @@ import           Servant.Common.Req      (ClientOptions(..),
                                           reqTag,
                                           qParams, withCredentials)
 
+#ifdef servant-auth
+
+import qualified Servant.Auth            as Auth
+
+#endif
 
 -- * Accessing APIs as a Client
 
@@ -610,6 +614,9 @@ for empty and one for non-empty lists).
 
 -- @HasCookieAuth auths@ is nominally a redundant constraint, but ensures
 -- we're not trying to rely on cookies when the API does not use them.
+
+#ifdef servant-auth
+
 instance (HasCookieAuth auths, HasClient t m api tag) => HasClient t m (Auth.Auth auths a :> api) tag where
 
   type Client t m (Auth.Auth auths a :> api) tag = Client t m api tag
@@ -623,3 +630,4 @@ type family HasCookieAuth xs :: Constraint where
 
 class CookieAuthNotEnabled
 
+#endif

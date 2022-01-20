@@ -298,7 +298,6 @@ performRequests reqMeth rs reqHost opts trigger = do
 performSomeRequestsAsync
     :: (MonadIO (Performable m),
         MonadJSM (Performable m),
-        HasWebView (Performable m),
         PerformEvent t m,
         TriggerEvent t m,
         Traversable f,
@@ -428,4 +427,3 @@ builderToText = TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString
 
 escape :: T.Text -> T.Text
 escape = T.pack . N.escapeURIString (not . N.isReserved) . T.unpack . TE.decodeUtf8 . BL.toStrict . Builder.toLazyByteString . toEncodedUrlPiece
-

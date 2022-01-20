@@ -32,7 +32,7 @@ import           Reflex.Dom.Core
 import           Text.Read
 
 
-type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, HasWebView (Performable m), MonadJSM (Performable m))
+type SupportsServantReflex t m = (Reflex t, TriggerEvent t m, PerformEvent t m, MonadJSM (Performable m))
 
 -- | URI scheme to use
 data Scheme =

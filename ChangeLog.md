@@ -1,3 +1,8 @@
+0.4.0
+-----
+
+ - Require the specific reflex-dom-core >= 0.7 && < 0.8.
+
 0.3.5
 -----
 

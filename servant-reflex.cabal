@@ -1,5 +1,5 @@
 Name: servant-reflex
-Version: 0.3.6
+Version: 0.4.0
 Synopsis: servant API generator for reflex apps
 Description: Generate reflex-compatible client functions from servant API descriptions
 License: BSD3

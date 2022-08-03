@@ -16,7 +16,7 @@ import           Control.Arrow              ((&&&))
 import           Control.Concurrent
 import           Control.Monad              (join)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
-import           Data.Bifunctor             (first)
+import           Data.Bifunctor             (Bifunctor(..))
 import qualified Data.ByteString.Builder    as Builder
 import qualified Data.ByteString.Lazy.Char8 as BL
 import           Data.ByteString            (ByteString)
@@ -52,6 +52,13 @@ data ReqResult tag a
       -- ^ A failure to construct the request tagged with 'tag' at trigger time
   deriving (Functor)
 
+instance Bifunctor ReqResult where
+  first f = \case
+    ResponseSuccess tag a r -> ResponseSuccess (f tag) a r
+    ResponseFailure tag t r -> ResponseFailure (f tag) t r
+    RequestFailure  tag t   -> RequestFailure  (f tag) t
+  second = fmap
+    
 data ClientOptions = ClientOptions
     { optsRequestFixup :: forall a. Show a => XhrRequest a -> JSM (XhrRequest a)
       -- ^ Aribtrarily modify requests just before they are sent.
